@@ -1,5 +1,6 @@
 # downloads, proprietary parts, build output: never in git
-/work
+/work/*
+!/work/CACHEDIR.TAG
 /blobs
 /out
 /frames
