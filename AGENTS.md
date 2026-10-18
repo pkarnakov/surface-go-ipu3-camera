@@ -38,8 +38,10 @@ and why; this file covers how to work on it.
 - [`build-libcamera.sh`](build-libcamera.sh) and [`build-ipa.sh`](build-ipa.sh) need rootless podman (fedora:43).
   [`build-ipa.sh`](build-ipa.sh) fails unless the offline smoke test ([`test/ipa_smoke.cpp`](test/ipa_smoke.cpp))
   gets through 60 frames and reports the pipeline name `ipu3`.
-- Picture quality only shows on the device: [`test/compare.sh`](test/compare.sh) (stop apps
-  using the camera first), then look at `frames/compare.png`. Judge color
+- Picture quality only shows on the device: [`test/compare.sh`](test/compare.sh) `front` or
+  `back` (stop apps using the camera first), then look at
+  `frames/{front,back}/compare.png`; [`test/preview.sh`](test/preview.sh) for a live view.
+  [`test/camtest.html`](test/camtest.html) in Chromium checks the PipeWire path apps use. Judge color
   on neutral surfaces (walls, gray clothes): measure mean U/V there instead
   of eyeballing.
 

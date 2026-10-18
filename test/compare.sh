@@ -1,14 +1,22 @@
 #!/bin/bash
-# On the Surface Go: a 1280x720 frame of the front camera with libcamera's
-# IPA and one with Intel's (after 90 frames, AE/AWB settled), side by side at
-# half size in ./frames/compare.png (left: libcamera, right: Intel), and
-# the last fps line of each. Stop apps using the camera first.
-#   test/compare.sh
+# On the Surface Go: a frame of one camera with libcamera's IPA and one with
+# Intel's, side by side at half size in ./frames/CAMERA/compare.png (left:
+# libcamera, right: Intel), and the last fps line of each. Front: 1280x720
+# after 90 frames (AE/AWB settled). Back: full resolution (3264x2448 asked,
+# 3200x2432 out; the ov8865 driver stalls at other sizes) after 60 frames
+# (AE/AWB/AF settled). Stop apps using the camera first (qcam, browsers).
+#   test/compare.sh [front|back]     (default: front)
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
 case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
 command -v cam >/dev/null || { echo "cam not found: sudo dnf install libcamera-tools"; exit 1; }
-F=$PWD/frames
+WHICH=${1:-front}
+case "$WHICH" in
+  front) ID=CAMF; ASK=1280x720; W=1280; H=720; N=90; T=30;;
+  back) ID=CAMR; ASK=3264x2448; W=3200; H=2432; N=60; T=40;;
+  *) echo "usage: $0 [front|back]"; exit 1;;
+esac
+F=$PWD/frames/$WHICH
 rm -rf "$F"; mkdir -p "$F"
 for ipa in libcamera intel; do
   if [ $ipa = intel ]; then
@@ -17,23 +25,24 @@ for ipa in libcamera intel; do
     unset LIBCAMERA_IPA_MODULE_PATH
   fi
   # numbered by which cameras initialized: look it up
-  CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1 || true)
-  [ -n "$CAM" ] || { echo "$ipa: no front camera (CAMF) in cam -l"; exit 1; }
+  CAM=$(cam -l 2>/dev/null | grep -m1 "$ID" | cut -d: -f1 || true)
+  [ -n "$CAM" ] || { echo "$ipa: no $WHICH camera ($ID) in cam -l"; exit 1; }
   mkdir -p "$F/$ipa"
-  rc=0; timeout -k 3 30 cam -c "$CAM" --capture=90 \
-    --stream width=1280,height=720,pixelformat=NV12 --file="$F/$ipa/f-#.nv12" \
+  rc=0; timeout -k 3 $T cam -c "$CAM" --capture=$N \
+    --stream width=${ASK%x*},height=${ASK#*x},pixelformat=NV12 --file="$F/$ipa/f-#.nv12" \
     >"$F/$ipa.out" 2>&1 </dev/null || rc=$?
   echo "$ipa: rc=$rc (134 = abort, 139 = crash, 124 = hang)"
   grep -E "Using tuning|ERROR|FATAL|Assert" "$F/$ipa.out" | grep -v ov7251 | sed 's/\x1b\[[0-9;]*m//g' | sort | uniq -c | head -10 || true
   grep -E "fps\)" "$F/$ipa.out" | tail -1 || true
   last=$(ls "$F/$ipa"/*.nv12 | sort -V | tail -1); mv "$last" "$F/$ipa.nv12"; rm -rf "$F/$ipa"
 done
-python3 - "$F" <<'EOF'
-# NV12 -> RGB at half size, side by side, as PNG (no numpy needed)
+python3 - "$F" $W $H <<'EOF'
+# NV12 (stride = width) -> RGB at half size, side by side, as PNG (no numpy needed)
 import sys, zlib, struct
-d = sys.argv[1]; w, h = 1280, 720
+d = sys.argv[1]; w, h = int(sys.argv[2]), int(sys.argv[3])
 def rgb(f):
     b = open(f, "rb").read()
+    if len(b) != w * h * 3 // 2: sys.exit(f"{f}: {len(b)} bytes, expected {w}x{h} NV12")
     rows = []
     for y in range(0, h, 2):
         row = bytearray()

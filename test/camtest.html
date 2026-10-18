@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  In a browser on the Surface Go: what apps get from the cameras through
+  PipeWire. Lists the cameras the browser sees, asks one for an exact size
+  (OverconstrainedError if it can't deliver), then logs the settings it got
+  and the frames per second shown. Chromium needs
+  chrome://flags/#enable-webrtc-pipewire-camera; open the file directly
+  (file:// counts as a secure context). Nothing to undo.
+-->
+<title>Camera test</title>
+<style>body{font:14px sans-serif;margin:1em}video{max-width:100%;background:#000}pre{white-space:pre-wrap}</style>
+<p>
+<select id="cam"></select>
+<select id="size">
+  <option>3264x2448</option><option>3200x2432</option>
+  <option>1280x720</option><option>640x480</option>
+</select>
+<button id="go">Start</button> <button id="stop">Stop</button>
+</p>
+<video id="v" autoplay playsinline muted></video>
+<pre id="log"></pre>
+<script>
+const $ = id => document.getElementById(id), log = s => $("log").textContent += s + "\n";
+let stream, timer;
+async function list() {
+  const s = await navigator.mediaDevices.getUserMedia({video: true});
+  s.getTracks().forEach(t => t.stop());
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind == "videoinput");
+  $("cam").innerHTML = devs.map(d => `<option value="${d.deviceId}">${d.label}</option>`).join("");
+}
+function stop() {
+  clearInterval(timer);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+}
+$("stop").onclick = stop;
+$("go").onclick = async () => {
+  stop();
+  const [w, h] = $("size").value.split("x").map(Number);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video: {
+      deviceId: {exact: $("cam").value}, width: {exact: w}, height: {exact: h}}});
+  } catch (e) { log(`${w}x${h}: ${e.name} ${e.message}`); return; }
+  const t = stream.getVideoTracks()[0];
+  $("v").srcObject = stream;
+  log(`${t.label}: asked ${w}x${h}, got ${JSON.stringify(t.getSettings())}`);
+  let last = 0;
+  timer = setInterval(() => {
+    const q = $("v").getVideoPlaybackQuality(), n = q.totalVideoFrames;
+    log(`frames ${n} (+${n - last}/s), ${$("v").videoWidth}x${$("v").videoHeight}`); last = n;
+  }, 1000);
+};
+list().catch(e => log("list: " + e));
+</script>

@@ -29,7 +29,9 @@ Before/after frames, questions and reports: [linux-surface discussion
 | [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with four fixes (below), installed and version-locked. |
 | [`patches/ipu3-ipa/`](patches/ipu3-ipa/) | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693 and ov8865. |
 | [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: both cameras' pictures the right way round (they read out mirrored). `0103`: the ImgU gets the Bayer order after the sensor's flips (the ov5693's flip shifts it). |
-| [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/compare.png`. |
+| [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/front/compare.png` (`back`: the back camera). |
+| [`test/preview.sh`](test/preview.sh) | Live preview in qcam (`front`/`back`, `intel`/`libcamera`). |
+| [`test/camtest.html`](test/camtest.html) | Browser page: what apps get through PipeWire (cameras, exact sizes, fps). |
 
 ## Steps
 
@@ -50,7 +52,7 @@ Then, on the Surface Go (copy the directory over if you built elsewhere):
 ```bash
 ./install-libcamera.sh   # sudo: dnf install + versionlock
 ./install-ipa.sh         # user-level, restarts WirePlumber
-test/compare.sh          # optional: frames/compare.png
+test/compare.sh          # optional: frames/front/compare.png
 ```
 
 > [!IMPORTANT]
