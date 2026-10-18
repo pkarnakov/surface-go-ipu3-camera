@@ -1,0 +1,35 @@
+--- a/src/libcamera/pipeline/ipu3/ipu3.cpp
++++ b/src/libcamera/pipeline/ipu3/ipu3.cpp
+@@ -25,6 +25,7 @@
+ #include <libcamera/ipa/ipu3_ipa_interface.h>
+ #include <libcamera/ipa/ipu3_ipa_proxy.h>
+ 
++#include "libcamera/internal/bayer_format.h"
+ #include "libcamera/internal/camera.h"
+ #include "libcamera/internal/camera_lens.h"
+ #include "libcamera/internal/camera_sensor.h"
+@@ -560,7 +561,23 @@
+ 	if (imguConfig.isNull())
+ 		return 0;
+ 
+-	ret = imgu->configure(imguConfig, &cio2Format);
++	/*
++	 * The CIO2 keeps the sensor's media bus code (link validation wants
++	 * it), which for a sensor whose flips change the Bayer order is the
++	 * unflipped one. Give the ImgU the order the frames really have.
++	 */
++	static const std::map<BayerFormat::Order, PixelFormat> ipu3Formats = {
++		{ BayerFormat::BGGR, formats::SBGGR10_IPU3 },
++		{ BayerFormat::GBRG, formats::SGBRG10_IPU3 },
++		{ BayerFormat::GRBG, formats::SGRBG10_IPU3 },
++		{ BayerFormat::RGGB, formats::SRGGB10_IPU3 },
++	};
++	V4L2DeviceFormat imguInput = cio2Format;
++	auto itOrder = ipu3Formats.find(cio2->sensor()->bayerOrder(config->combinedTransform_));
++	if (itOrder != ipu3Formats.end())
++		imguInput.fourcc = imgu->input_->toV4L2PixelFormat(itOrder->second);
++
++	ret = imgu->configure(imguConfig, &imguInput);
+ 	if (ret)
+ 		return ret;
+ 

@@ -61,10 +61,10 @@ and why; this file covers how to work on it.
   `MSHW0140` looked almost the same on the Go 3.
 - Gain codes differ per sensor: 1x is 16 on the ov5693 (1..127), 128 on
   the ov8865 (128..2048); the IPA's sensor table carries it.
-- The Go 3's back camera reads out mirrored (left-right); the firmware's
-  rotation (0) can't say so. 0102 makes libcamera treat it as mounted
-  mirrored on that model, so the sensor's HFLIP is set: check with text in
-  view (`cam -o mirror` showed the right way round before 0102).
+- The Go 3's cameras read out mirrored (left-right), both of them; the
+  firmware's rotation (0) can't say so. 0102 makes libcamera treat them as
+  mounted mirrored on that model, so the sensors' HFLIP is set: check with
+  text in view (`cam -o mirror` showed the right way round before 0102).
 - The ov8865 driver only streams at full resolution (3264x2448 asked,
   3200x2432 out); other sizes give one frame, then stall, with either IPA.
 - `cam -F` takes its file name only as `--file=NAME`; `-F NAME` is a usage
