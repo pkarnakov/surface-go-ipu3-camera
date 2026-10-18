@@ -66,7 +66,8 @@ held back too. Build output and caches: `rm -rf work blobs out`.
   other size the ov8865 driver (kernel 7.2) delivers one frame and stalls,
   whichever IPA runs, so apps asking for a smaller size hang. The IR
   sensor (ov7251) is not supported by libcamera.
-- **No autofocus:** the ov5693 module is fixed-focus.
+- **Front camera fixed-focus:** the ov5693 module has no focus motor (the
+  back camera's autofocus works).
 - **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the
   updates repository: once Fedora ships a newer build, the build scripts
   can't download it any more). Then the version in the scripts has to
@@ -106,6 +107,9 @@ held back too. Build output and caches: `rm -rf work blobs out`.
     its own;
   - adds the ov5693 and ov8865 entries, with each sensor's gain code at
     1x for the AE's gain limit;
+  - sends the autofocus lens position with the lens's controls (it went
+    with the sensor's and was dropped, so the back camera stayed out of
+    focus);
   - looks for the tuning next to the module;
   - keeps AE within the sensor's exposure and gain range, with 50 Hz
     flicker reduction.

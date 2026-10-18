@@ -1,6 +1,6 @@
-From 085deea73171225c93080c6e37ed421f6166e59f Mon Sep 17 00:00:00 2001
+From ce25a8be2e5ecf41468d4996f45fb1914fa716f2 Mon Sep 17 00:00:00 2001
 From: Petr Karnakov <pkarnakov@gmail.com>
-Date: Sun, 18 Oct 2026 22:57:03 +0200
+Date: Sun, 18 Oct 2026 23:22:10 +0200
 Subject: [PATCH] Port to libcamera 0.5, add the ov5693 and ov8865 (Surface Go
  3)
 
@@ -12,15 +12,17 @@ Subject: [PATCH] Port to libcamera 0.5, add the ov5693 and ov8865 (Surface Go
   /etc/camera/ipu3/; install RPATH $ORIGIN/lib for the Intel libraries.
 - AE limited to the sensor's exposure (frame at the default VBLANK) and
   analogue gain (as ISO), 50 Hz flicker reduction.
+- AF lens position sent with the lens's controls (it went with the
+  sensor's, which have no focus control, and was dropped).
 - Per-frame 'Not copying' messages down from Error to Debug.
 ---
  aiq/aiq.h                    |  7 +++
  aiq/aiq_input_parameters.cpp |  2 +-
- aiq/aiq_input_parameters.h   |  5 +++
+ aiq/aiq_input_parameters.h   |  5 ++
  aiq/aiq_results.cpp          | 16 +++----
- ipu3.cpp                     | 82 +++++++++++++++++++++++++++++-------
- meson.build                  | 22 ++++++----
- 6 files changed, 101 insertions(+), 33 deletions(-)
+ ipu3.cpp                     | 90 +++++++++++++++++++++++++++++-------
+ meson.build                  | 22 +++++----
+ 6 files changed, 107 insertions(+), 35 deletions(-)
 
 diff --git a/aiq/aiq.h b/aiq/aiq.h
 index 49eee2d..7d6261c 100644
@@ -142,7 +144,7 @@ index befcf7a..c66d7b9 100644
  
  	pa_.black_level = pa->black_level;
 diff --git a/ipu3.cpp b/ipu3.cpp
-index f3c65c7..1aaee40 100644
+index f3c65c7..b6537f0 100644
 --- a/ipu3.cpp
 +++ b/ipu3.cpp
 @@ -5,7 +5,10 @@
@@ -180,7 +182,15 @@ index f3c65c7..1aaee40 100644
  private:
  	void updateControls(const IPACameraSensorInfo &sensorInfo,
  			    const ControlInfoMap &sensorControls,
-@@ -76,6 +81,8 @@ private:
+@@ -66,6 +71,7 @@ private:
+ 	std::map<unsigned int, MappedFrameBuffer> buffers_;
+ 
+ 	ControlInfoMap ctrls_;
++	ControlInfoMap lensCtrls_;
+ 
+ 	IPACameraSensorInfo sensorInfo_;
+ 
+@@ -76,6 +82,8 @@ private:
  	uint32_t gain_;
  	uint32_t minGain_;
  	uint32_t maxGain_;
@@ -189,7 +199,7 @@ index f3c65c7..1aaee40 100644
  	int32_t lensPosition_;
  
  	/* Intel AF library relies on timestamp to wait for lens movement */
-@@ -171,10 +178,17 @@ int IPAIPU3::init(const IPASettings &settings,
+@@ -171,10 +179,17 @@ int IPAIPU3::init(const IPASettings &settings,
  	 * \todo This mapping table should be handled more generically
  	 * or through the configuration interfaces.
  	 */
@@ -211,7 +221,7 @@ index f3c65c7..1aaee40 100644
  	};
  
  	LOG(IPAIPU3, Info) << "Initialising IPA IPU3 for "
-@@ -186,8 +200,21 @@ int IPAIPU3::init(const IPASettings &settings,
+@@ -186,8 +201,21 @@ int IPAIPU3::init(const IPASettings &settings,
  		return -EINVAL;
  	}
  
@@ -235,7 +245,15 @@ index f3c65c7..1aaee40 100644
  
  	LOG(IPAIPU3, Info) << "Using tuning file: " << tuningFile;
  	ret = aiqb_.load(tuningFile.c_str());
-@@ -287,6 +314,31 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
+@@ -240,6 +268,7 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
+ 	 * to be set on the sensor.
+ 	 */
+ 	ctrls_ = configInfo.sensorControls;
++	lensCtrls_ = configInfo.lensControls;
+ 
+ 	const auto itExp = ctrls_.find(V4L2_CID_EXPOSURE);
+ 	if (itExp == ctrls_.end()) {
+@@ -287,6 +316,31 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
  	/* Set AE/AWB defaults, this typically might not belong here */
  	aiqInputParams_.setAeAwbAfDefaults();
  
@@ -267,7 +285,7 @@ index f3c65c7..1aaee40 100644
  	/* Upate the camera controls using the new sensor settings. */
  	updateControls(sensorInfo_, ctrls_, ipaControls);
  
-@@ -325,7 +377,7 @@ void IPAIPU3::queueRequest([[maybe_unused]] unsigned int frame,
+@@ -325,7 +379,7 @@ void IPAIPU3::queueRequest([[maybe_unused]] unsigned int frame,
  	/* \todo Start processing for 'frame' based on 'controls'. */
  }
  
@@ -276,7 +294,7 @@ index f3c65c7..1aaee40 100644
  {
  	auto it = buffers_.find(bufferId);
  	if (it == buffers_.end()) {
-@@ -359,11 +411,11 @@ void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
+@@ -359,11 +413,11 @@ void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
  
  	setControls(frame);
  
@@ -291,7 +309,20 @@ index f3c65c7..1aaee40 100644
  {
  	auto it = buffers_.find(bufferId);
  	if (it == buffers_.end()) {
-@@ -482,7 +534,7 @@ extern "C" {
+@@ -466,8 +520,10 @@ void IPAIPU3::setControls(unsigned int frame)
+ 	sensorCtrls.set(V4L2_CID_EXPOSURE, static_cast<int32_t>(exposure_));
+ 	sensorCtrls.set(V4L2_CID_ANALOGUE_GAIN, static_cast<int32_t>(gain_));
+ 
+-	ControlList lensCtrls(ctrls_);
+-	lensCtrls.set(V4L2_CID_FOCUS_ABSOLUTE, lensPosition_);
++	/* the lens has its own controls; the sensor's have no focus */
++	ControlList lensCtrls(lensCtrls_);
++	if (lensCtrls_.find(V4L2_CID_FOCUS_ABSOLUTE) != lensCtrls_.end())
++		lensCtrls.set(V4L2_CID_FOCUS_ABSOLUTE, lensPosition_);
+ 
+ 	setSensorControls.emit(frame, sensorCtrls, lensCtrls);
+ }
+@@ -482,7 +538,7 @@ extern "C" {
  const struct IPAModuleInfo ipaModuleInfo = {
  	IPA_MODULE_API_VERSION,
  	1,
