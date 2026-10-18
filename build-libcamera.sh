@@ -8,7 +8,7 @@
 #   https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366
 # - 0101: libcamera's own IPU3 exposure control has no anti-flicker, so under
 #   50 Hz lights the picture pulses. Exposure times of 10 ms and more are
-#   rounded down to whole 10 ms periods, analogue gain making up. Only
+#   rounded down to whole 10 ms periods, analog gain making up. Only
 #   matters with libcamera's IPA (Intel's IPA does its own, see build-ipa.sh).
 # Any x86_64 Linux with rootless podman (a fedora:43 container; on the
 # Surface Go itself it works too, just slowly).

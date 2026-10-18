@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Intel's IPU3 3A (camera/ipu3-ipa plus Intel's closed ChromeOS libraries,
-with the Surface Go 3 Windows tuning) for the Surface Go 3's front camera
-(ov5693) under libcamera 0.5.2 on Fedora 43. The [README](README.md) covers what it does
+with the Surface Go 3 Windows tuning) for the Surface Go 3's cameras
+(ov5693 front, ov8865 back) under libcamera 0.5.2 on Fedora 43. The [README](README.md) covers what it does
 and why; this file covers how to work on it.
 
 ## Rules
@@ -39,8 +39,8 @@ and why; this file covers how to work on it.
   [`build-ipa.sh`](build-ipa.sh) fails unless the offline smoke test ([`test/ipa_smoke.cpp`](test/ipa_smoke.cpp))
   gets through 60 frames and reports the pipeline name `ipu3`.
 - Picture quality only shows on the device: [`test/compare.sh`](test/compare.sh) (stop apps
-  using the camera first), then look at `frames/compare.png`. Judge colour
-  on neutral surfaces (walls, grey clothes): measure mean U/V there instead
+  using the camera first), then look at `frames/compare.png`. Judge color
+  on neutral surfaces (walls, gray clothes): measure mean U/V there instead
   of eyeballing.
 
 ## Facts that cost time to find
@@ -52,9 +52,17 @@ and why; this file covers how to work on it.
   first matching module wins. WirePlumber gets it from the systemd drop-in;
   restart WirePlumber after changes. Unsigned modules run in
   `ipu3_ipa_proxy`, a separate process.
-- With Intel's IPA the back camera's IPA init fails (no ov8865 tuning), so
-  the front camera's `cam` index changes (2 → 1). Look it up with
-  `cam -l | grep CAMF` under the same environment as the capture.
+- `cam` numbers cameras by which ones initialized: look the front one up
+  with `cam -l | grep CAMF` (back: `CAMR`) under the same environment as
+  the capture, don't hardcode it.
+- The tunings are per model, named by the camera's ACPI ID: Go 2/3 front
+  `YHCU`, back `YHCT` (the linux-surface wiki's camera page lists them).
+  The `MSHW*` files in the same MSI are other Surfaces'; the Book 2's
+  `MSHW0140` looked almost the same on the Go 3.
+- Gain codes differ per sensor: 1x is 16 on the ov5693 (1..127), 128 on
+  the ov8865 (128..2048); the IPA's sensor table carries it.
+- The ov8865 driver only streams at full resolution (3264x2448 asked,
+  3200x2432 out); other sizes give one frame, then stall, with either IPA.
 - `cam -F` takes its file name only as `--file=NAME`; `-F NAME` is a usage
   error (rc 1).
 - AIQB: a makernote, header `AIQB`, u32 size at 4, checksum at 20 = u32 sum
@@ -65,7 +73,7 @@ and why; this file covers how to work on it.
   about level / 128. The Windows value (~16600) gives 128 and a yellow-green
   picture; 4096 (obgrid 32) is neutral. libcamera's own IPA uses obgrid 64.
 - Intel's AWB gains are fine (BNR `wb_gains` are U3.13 with gain = 1 + x;
-  gr = 0 means 1.0). For a colour cast, check obgrid, CCM and shading
+  gr = 0 means 1.0). For a color cast, check obgrid, CCM and shading
   before suspecting AWB.
 - `DT_RUNPATH` does not apply to the Intel libraries' own dependencies;
   the module needs `DT_RPATH` (`-Wl,--disable-new-dtags`) with

@@ -16,7 +16,7 @@ for ipa in libcamera intel; do
   else
     unset LIBCAMERA_IPA_MODULE_PATH
   fi
-  # the number changes: with Intel's IPA the back camera is gone
+  # numbered by which cameras initialized: look it up
   CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1 || true)
   [ -n "$CAM" ] || { echo "$ipa: no front camera (CAMF) in cam -l"; exit 1; }
   mkdir -p "$F/$ipa"

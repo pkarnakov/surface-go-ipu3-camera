@@ -1,8 +1,10 @@
 #!/bin/bash
 # Fetch the proprietary parts of Intel's IPU3 3A into ./blobs (never in git):
-# - ov5693_MSHW0140.aiqb, ov5693_MSHW0150.aiqb: the front camera's tuning
-#   (two module variants) from Microsoft's Surface Go 3 driver package. Each
-#   .cpf there is a 32-byte CPFF header around the AIQB that Intel's library
+# - ov5693.aiqb, ov8865.aiqb: the front and back cameras' tuning from
+#   Microsoft's Surface Go 3 driver package (OV5693_YHCU_SKY.cpf,
+#   OV8865_YHCT_SKY.cpf: YHCU/YHCT are the Go 2/3's ACPI IDs; the package
+#   also has the other IPU3 Surfaces' tunings, by their MSHW IDs). Each
+#   .cpf is a 32-byte CPFF header around the AIQB that Intel's library
 #   reads. Its black level (~16600 on the 16-bit scale) is not what the
 #   sensor gives under Linux: the ISP then over-subtracts and the picture
 #   turns yellow-green. It is set to 4096 (neutral; 1024..8192 tried) and the
@@ -94,9 +96,12 @@ with open(f"{out}/files.tsv", "w") as f:
 print(n, "cabinets,", rows, "files")
 EOF
 cabextract-1.11/cabextract -q -d msi/x msi/*.cab
-for v in MSHW0140 MSHW0150; do
-  key=$(awk -F'\t' -v n="OV5693_${v}_SKY.cpf" 'toupper($2) == toupper(n) {print $1}' msi/files.tsv)
-  venv/bin/python - msi/x/$key $TOP/blobs/ov5693_$v.aiqb $BLACK_LEVEL <<'EOF'
+rm -f "$TOP"/blobs/*.aiqb
+for v in OV5693_YHCU OV8865_YHCT; do
+  key=$(awk -F'\t' -v n="${v}_SKY.cpf" 'toupper($2) == toupper(n) {print $1}' msi/files.tsv)
+  [ -n "$key" ] || { echo "not in the MSI: ${v}_SKY.cpf"; exit 1; }
+  s=${v%%_*}
+  venv/bin/python - msi/x/$key $TOP/blobs/${s,,}.aiqb $BLACK_LEVEL <<'EOF'
 import struct, sys
 b = open(sys.argv[1], "rb").read()
 assert b[:4] == b"CPFF" and b[0x20:0x24] == b"AIQB", "not a CPF around an AIQB"

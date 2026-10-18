@@ -1,13 +1,13 @@
 #!/bin/bash
 # Build Intel's IPU3 IPA for libcamera 0.5.2 into ./out/ipa (the module,
-# lib/ with Intel's libraries, both tunings). The IPA is camera/ipu3-ipa
+# lib/ with Intel's libraries, the tunings). The IPA is camera/ipu3-ipa
 # (gitlab.freedesktop.org, 4ff2368, 2022; it wraps Intel's ChromeOS
-# libraries) with patches/ipu3-ipa: ported to libcamera 0.5, ov5693 entry,
+# libraries) with patches/ipu3-ipa: ported to libcamera 0.5, ov5693 and ov8865 entries,
 # AE kept within the sensor's limits, 50 Hz flicker reduction. Built in a
 # fedora:43 container against Fedora's libcamera-devel 0.5.2, with the
 # private headers it needs (libcamera/base/log.h, linux/intel-ipu3.h) from
 # the source package. Then an offline smoke test in the same container:
-# init/configure/start and 60 frames of synthetic statistics, black and grey.
+# init/configure/start and 60 frames of synthetic statistics, black and gray.
 # Needs ./blobs from fetch-blobs.sh. Any x86_64 Linux with rootless podman.
 #   ./build-ipa.sh
 # Undo: rm -rf work/ipa out/ipa; podman rmi registry.fedoraproject.org/fedora:43
@@ -18,6 +18,7 @@ TOP=$PWD
 W=$TOP/work/ipa
 [ -f blobs/lib/libSkyCamAICKBL.so ] || { echo "run ./fetch-blobs.sh first"; exit 1; }
 mkdir -p $W
+rm -f "$W"/*.patch
 cp patches/ipu3-ipa/*.patch test/ipa_smoke.cpp $W/
 rm -rf $W/blobs && cp -a blobs $W/blobs
 
@@ -56,7 +57,7 @@ readelf -d $M | grep -E 'RPATH|RUNPATH|NEEDED'
 unset LD_LIBRARY_PATH
 rm -rf /work/inst && mkdir -p /work/inst
 cp $M /work/inst/ && cp -a /work/blobs/lib /work/inst/lib
-cp /work/blobs/ov5693_MSHW0140.aiqb /work/inst/ov5693.aiqb
+cp /work/blobs/ov5693.aiqb /work/inst/
 g++ -std=c++17 -O1 -DLIBCAMERA_BASE_PRIVATE -I$INC -I/usr/include/libcamera \
   /work/ipa_smoke.cpp -lcamera -lcamera-base -o /work/ipa_smoke
 for v in 0 64; do
@@ -71,6 +72,6 @@ EOF
 chmod +x $W/build.sh
 podman run --rm -v $W:/work:Z registry.fedoraproject.org/fedora:43 /work/build.sh
 rm -rf out/ipa; mkdir -p out/ipa
-cp $W/out/lib/libcamera/intel-ipu3-ipa.so blobs/ov5693_MSHW01[45]0.aiqb out/ipa/
+cp $W/out/lib/libcamera/intel-ipu3-ipa.so blobs/*.aiqb out/ipa/
 cp -a blobs/lib out/ipa/lib
 ls -lR out/ipa

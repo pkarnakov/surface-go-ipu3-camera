@@ -1,24 +1,26 @@
-From 241ccc7255e9dc49a51e1998cee77f23fca58430 Mon Sep 17 00:00:00 2001
+From 085deea73171225c93080c6e37ed421f6166e59f Mon Sep 17 00:00:00 2001
 From: Petr Karnakov <pkarnakov@gmail.com>
-Date: Sun, 18 Oct 2026 21:06:19 +0200
-Subject: [PATCH] Port to libcamera 0.5, add the ov5693 (Surface Go 3)
+Date: Sun, 18 Oct 2026 22:57:03 +0200
+Subject: [PATCH] Port to libcamera 0.5, add the ov5693 and ov8865 (Surface Go
+ 3)
 
 - libcamera 0.5 renamed fillParamsBuffer/processStatsBuffer/paramsBufferReady
   to computeParams/processStats/paramsComputed, and matches IPA modules by
   the pipeline handler's registered name ('ipu3', was PipelineHandlerIPU3).
-- ov5693 tuning entry; tuning looked up next to the module first, then in
+- ov5693 and ov8865 tuning entries, with each sensor's gain code at 1x;
+  tuning looked up next to the module first, then in
   /etc/camera/ipu3/; install RPATH $ORIGIN/lib for the Intel libraries.
 - AE limited to the sensor's exposure (frame at the default VBLANK) and
   analogue gain (as ISO), 50 Hz flicker reduction.
 - Per-frame 'Not copying' messages down from Error to Debug.
 ---
- aiq/aiq.h                    |  7 ++++
+ aiq/aiq.h                    |  7 +++
  aiq/aiq_input_parameters.cpp |  2 +-
  aiq/aiq_input_parameters.h   |  5 +++
- aiq/aiq_results.cpp          | 16 ++++-----
- ipu3.cpp                     | 66 ++++++++++++++++++++++++++++++------
- meson.build                  | 22 +++++++-----
- 6 files changed, 89 insertions(+), 29 deletions(-)
+ aiq/aiq_results.cpp          | 16 +++----
+ ipu3.cpp                     | 82 +++++++++++++++++++++++++++++-------
+ meson.build                  | 22 ++++++----
+ 6 files changed, 101 insertions(+), 33 deletions(-)
 
 diff --git a/aiq/aiq.h b/aiq/aiq.h
 index 49eee2d..7d6261c 100644
@@ -140,7 +142,7 @@ index befcf7a..c66d7b9 100644
  
  	pa_.black_level = pa->black_level;
 diff --git a/ipu3.cpp b/ipu3.cpp
-index f3c65c7..8027bf2 100644
+index f3c65c7..1aaee40 100644
 --- a/ipu3.cpp
 +++ b/ipu3.cpp
 @@ -5,7 +5,10 @@
@@ -178,16 +180,38 @@ index f3c65c7..8027bf2 100644
  private:
  	void updateControls(const IPACameraSensorInfo &sensorInfo,
  			    const ControlInfoMap &sensorControls,
-@@ -175,6 +180,8 @@ int IPAIPU3::init(const IPASettings &settings,
- 		{ "ov13858", "00ov13858.aiqb" },
- 		{ "ov5670", "01ov5670.aiqb" },
- 		{ "imx258", "00imx258.aiqb" },
-+		/* Surface Go 3 front camera, from the Windows driver's CPF */
-+		{ "ov5693", "ov5693.aiqb" },
+@@ -76,6 +81,8 @@ private:
+ 	uint32_t gain_;
+ 	uint32_t minGain_;
+ 	uint32_t maxGain_;
++	/* analogue gain code at 1x, per sensor (for the ISO limit) */
++	uint32_t gainUnit_ = 16;
+ 	int32_t lensPosition_;
+ 
+ 	/* Intel AF library relies on timestamp to wait for lens movement */
+@@ -171,10 +178,17 @@ int IPAIPU3::init(const IPASettings &settings,
+ 	 * \todo This mapping table should be handled more generically
+ 	 * or through the configuration interfaces.
+ 	 */
+-	std::map<std::string, std::string> aiqb_paths = {
+-		{ "ov13858", "00ov13858.aiqb" },
+-		{ "ov5670", "01ov5670.aiqb" },
+-		{ "imx258", "00imx258.aiqb" },
++	struct Tuning {
++		std::string file;
++		uint32_t gainUnit;
++	};
++	std::map<std::string, Tuning> aiqb_paths = {
++		{ "ov13858", { "00ov13858.aiqb", 16 } },
++		{ "ov5670", { "01ov5670.aiqb", 16 } },
++		{ "imx258", { "00imx258.aiqb", 16 } },
++		/* Surface Go 3 front and back, from the Windows driver's CPFs */
++		{ "ov5693", { "ov5693.aiqb", 16 } },
++		{ "ov8865", { "ov8865.aiqb", 128 } },
  	};
  
  	LOG(IPAIPU3, Info) << "Initialising IPA IPU3 for "
-@@ -186,8 +193,20 @@ int IPAIPU3::init(const IPASettings &settings,
+@@ -186,8 +200,21 @@ int IPAIPU3::init(const IPASettings &settings,
  		return -EINVAL;
  	}
  
@@ -202,23 +226,24 @@ index f3c65c7..8027bf2 100644
 +	if (dladdr(reinterpret_cast<void *>(&ipaCreate), &info) && info.dli_fname) {
 +		std::string path(info.dli_fname);
 +		std::string dir = dirname(path.data());
-+		if (access((dir + "/" + it->second).c_str(), R_OK) == 0)
-+			tuningFile = dir + "/" + it->second;
++		if (access((dir + "/" + it->second.file).c_str(), R_OK) == 0)
++			tuningFile = dir + "/" + it->second.file;
 +	}
 +	if (tuningFile.empty())
-+		tuningFile = "/etc/camera/ipu3/" + it->second;
++		tuningFile = "/etc/camera/ipu3/" + it->second.file;
++	gainUnit_ = it->second.gainUnit;
  
  	LOG(IPAIPU3, Info) << "Using tuning file: " << tuningFile;
  	ret = aiqb_.load(tuningFile.c_str());
-@@ -287,6 +306,31 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
+@@ -287,6 +314,31 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
  	/* Set AE/AWB defaults, this typically might not belong here */
  	aiqInputParams_.setAeAwbAfDefaults();
  
 +	/*
 +	 * Keep the AE within what the sensor can do: the exposure within the
 +	 * frame at the sensor's default VBLANK (the IPA does not change the
-+	 * frame length), the analogue gain (gain code / 16 on the ov5693, the
-+	 * tuning's own conversion) up to its maximum as an ISO limit.
++	 * frame length), the analogue gain (gain code / gainUnit_, the tuning's
++	 * own conversion) up to its maximum as an ISO limit.
 +	 */
 +	const auto itVBlank = ctrls_.find(V4L2_CID_VBLANK);
 +	if (itVBlank != ctrls_.end()) {
@@ -231,7 +256,7 @@ index f3c65c7..8027bf2 100644
 +		l.manual_frame_time_us_min = static_cast<int>(frameLines * lineUs);
 +		l.manual_frame_time_us_max = l.manual_frame_time_us_min;
 +		l.manual_iso_min = -1;
-+		l.manual_iso_max = static_cast<short>(aiq_.baseIso() * maxGain_ / 16);
++		l.manual_iso_max = static_cast<short>(aiq_.baseIso() * maxGain_ / gainUnit_);
 +		aiqInputParams_.setAeLimits(l);
 +		LOG(IPAIPU3, Info) << "AE limits: exposure " << l.manual_exposure_time_max
 +				   << " us, frame " << l.manual_frame_time_us_min
@@ -242,7 +267,7 @@ index f3c65c7..8027bf2 100644
  	/* Upate the camera controls using the new sensor settings. */
  	updateControls(sensorInfo_, ctrls_, ipaControls);
  
-@@ -325,7 +369,7 @@ void IPAIPU3::queueRequest([[maybe_unused]] unsigned int frame,
+@@ -325,7 +377,7 @@ void IPAIPU3::queueRequest([[maybe_unused]] unsigned int frame,
  	/* \todo Start processing for 'frame' based on 'controls'. */
  }
  
@@ -251,7 +276,7 @@ index f3c65c7..8027bf2 100644
  {
  	auto it = buffers_.find(bufferId);
  	if (it == buffers_.end()) {
-@@ -359,11 +403,11 @@ void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
+@@ -359,11 +411,11 @@ void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
  
  	setControls(frame);
  
@@ -266,7 +291,7 @@ index f3c65c7..8027bf2 100644
  {
  	auto it = buffers_.find(bufferId);
  	if (it == buffers_.end()) {
-@@ -482,7 +526,7 @@ extern "C" {
+@@ -482,7 +534,7 @@ extern "C" {
  const struct IPAModuleInfo ipaModuleInfo = {
  	IPA_MODULE_API_VERSION,
  	1,
