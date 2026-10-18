@@ -24,7 +24,7 @@ and why; this file covers how to work on it.
   details.
 - **Patches** are `git format-patch` output against the pinned upstream
   commit ([`patches/ipu3-ipa/`](patches/ipu3-ipa/)) or plain diffs against Fedora's source
-  package ([`patches/libcamera/`](patches/libcamera/), applied as `Patch100`/`Patch101` in the
+  package ([`patches/libcamera/`](patches/libcamera/), applied as `Patch100`..`Patch102` in the
   spec). Regenerate them from a real tree; don't hand-edit hunks.
 - Apache-2.0 (as ipu3-ipa): the files the ipu3-ipa patch touches are
   Apache-2.0 (meson.build CC0); keep it so. `patches/libcamera/` changes
@@ -61,6 +61,10 @@ and why; this file covers how to work on it.
   `MSHW0140` looked almost the same on the Go 3.
 - Gain codes differ per sensor: 1x is 16 on the ov5693 (1..127), 128 on
   the ov8865 (128..2048); the IPA's sensor table carries it.
+- The Go 3's back camera reads out mirrored (left-right); the firmware's
+  rotation (0) can't say so. 0102 makes libcamera treat it as mounted
+  mirrored on that model, so the sensor's HFLIP is set: check with text in
+  view (`cam -o mirror` showed the right way round before 0102).
 - The ov8865 driver only streams at full resolution (3264x2448 asked,
   3200x2432 out); other sizes give one frame, then stall, with either IPA.
 - `cam -F` takes its file name only as `--file=NAME`; `-F NAME` is a usage

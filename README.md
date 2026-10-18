@@ -24,9 +24,9 @@ libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
 | [`fetch-blobs.sh`](fetch-blobs.sh) | Downloads Microsoft's Surface Go 3 driver package and a ChromeOS recovery image, extracts the ov5693 and ov8865 tunings and Intel's libraries into `./blobs` (fixed up, see below). Nothing proprietary is in this repository. |
 | [`build-ipa.sh`](build-ipa.sh) | Builds the IPA module in a fedora:43 container (podman) into `./out/ipa`, then runs an offline smoke test. |
 | [`install-ipa.sh`](install-ipa.sh) | On the Surface Go: installs it for your user in `~/.local/lib/libcamera-ipu3-intel` and points WirePlumber at it. `--uninstall` undoes it. |
-| [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with two IPU3 fixes (below), installed and version-locked. |
+| [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with three fixes (below), installed and version-locked. |
 | [`patches/ipu3-ipa/`](patches/ipu3-ipa/) | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693 and ov8865. |
-| [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. |
+| [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: the back camera's picture the right way round (it reads out mirrored). |
 | [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/compare.png`. |
 
 ## Steps

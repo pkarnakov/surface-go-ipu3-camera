@@ -1,0 +1,33 @@
+--- a/src/libcamera/sensor/camera_sensor_legacy.cpp
++++ b/src/libcamera/sensor/camera_sensor_legacy.cpp
+@@ -8,6 +8,7 @@
+ #include <algorithm>
+ #include <cmath>
+ #include <float.h>
++#include <fstream>
+ #include <iomanip>
+ #include <limits.h>
+ #include <map>
+@@ -619,6 +620,22 @@
+ 		mountingOrientation_ = Orientation::Rotate0;
+ 	}
+ 
++	/*
++	 * The Surface Go 3's back camera (ov8865) reads out mirrored, which the
++	 * firmware can't express (it has a rotation only). Treat it as mounted
++	 * mirrored, so that the sensor's horizontal flip puts it right.
++	 */
++	if (model_ == "ov8865" &&
++	    properties_.get(properties::Location) == properties::CameraLocationBack) {
++		std::string vendor, product;
++		std::getline(std::ifstream("/sys/class/dmi/id/sys_vendor"), vendor);
++		std::getline(std::ifstream("/sys/class/dmi/id/product_name"), product);
++		if (vendor == "Microsoft Corporation" && product == "Surface Go 3") {
++			LOG(CameraSensor, Info) << "Mounted mirrored (Surface Go 3)";
++			mountingOrientation_ = mountingOrientation_ * Transform::HFlip;
++		}
++	}
++
+ 	properties_.set(properties::PixelArraySize, pixelArraySize_);
+ 	properties_.set(properties::PixelArrayActiveAreas, { activeArea_ });
+ 
