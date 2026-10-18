@@ -51,8 +51,11 @@ Then, on the Surface Go (copy the directory over if you built elsewhere):
 test/compare.sh          # optional: frames/compare.png
 ```
 
-Apps reach the camera through PipeWire. In Chromium, enable
-`chrome://flags/#enable-webrtc-pipewire-camera`.
+> [!IMPORTANT]
+> **Chromium (and Chrome) see no camera until you enable
+> `chrome://flags/#enable-webrtc-pipewire-camera`** and restart the browser:
+> apps reach the camera only through PipeWire, and Chromium uses V4L2 by
+> default (the IPU3's `/dev/video*` nodes are raw Bayer, useless to it).
 
 **Undo:** `./install-ipa.sh --uninstall` goes back to libcamera's own IPA.
 For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
