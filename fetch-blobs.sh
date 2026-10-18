@@ -17,15 +17,25 @@
 # ~10 GB of disk at the peak; ./work keeps the MSI (0.7 GB) and the image's
 # root partition (4.3 GB), the unpacked recovery image (4.5 GB) is deleted
 # once that is cut out.
+# The MSI and the root partition are checked against pinned sha256 sums.
 #   ./fetch-blobs.sh
+# Undo: rm -rf work/blobs blobs
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
+# sfdisk and debugfs live in /sbin on some distributions
+export PATH=$PATH:/usr/sbin:/sbin
+for t in curl unzip sfdisk debugfs python3 gcc make; do
+  command -v $t >/dev/null || { echo "missing: $t"; exit 1; }
+done
 TOP=$PWD
 W=$TOP/work/blobs
 MSI=SurfaceGo3_Win11_22631_26.080.320.0.msi
 MSI_URL=https://download.microsoft.com/download/100ded78-f124-4076-ab44-4be7375925fa/$MSI
 REC=chromeos_16700.66.0_soraka_recovery_lts-channel_SorakaMPKeys-v9.bin
 REC_URL=https://dl.google.com/dl/edgedl/chromeos/recovery/$REC.zip
+MSI_SHA256=41983621dd0568e69257124f02dd19c66408c91686ffda199a950638e5292703
+ROOTA_SHA256=73d8d68fce2d27b2ec924a8f464555d73b82c66b29eb0646bceb4287239036b2
 BLACK_LEVEL=4096
 mkdir -p $W $TOP/blobs/lib
 cd $W
@@ -39,7 +49,8 @@ if [ ! -x cabextract-1.11/cabextract ]; then
 fi
 
 # --- tuning from the Windows driver ---
-[ -f $MSI ] || curl -sSfL -o $MSI "$MSI_URL"
+if [ ! -f $MSI ]; then curl -sSfL -o $MSI.part "$MSI_URL" && mv $MSI.part $MSI; fi
+echo "$MSI_SHA256  $MSI" | sha256sum -c --quiet || { echo "$MSI: wrong checksum, delete it and rerun"; exit 1; }
 rm -rf msi && mkdir msi
 venv/bin/python - $MSI msi <<'EOF'
 # the MSI's cabinets, and its File table (file key -> long file name)
@@ -109,21 +120,31 @@ rm -rf msi
 
 # --- Intel's libraries from ChromeOS ---
 if [ ! -f rootA.img ]; then
-  [ -f $REC ] || { curl -sSfL -o rec.zip "$REC_URL"; unzip -q rec.zip; rm rec.zip; }
+  if [ ! -f $REC ]; then
+    curl -sSfL -o rec.zip.part "$REC_URL"
+    unzip -q -o rec.zip.part $REC -d rec.tmp && mv rec.tmp/$REC $REC && rm -r rec.zip.part rec.tmp
+  fi
   # ROOT-A is partition 3
   read -r start size < <(sfdisk -J $REC | venv/bin/python -c '
 import json, sys
 p = json.load(sys.stdin)["partitiontable"]["partitions"][2]
 print(p["start"], p["size"])')
-  dd if=$REC of=rootA.img bs=512 skip=$start count=$size status=none
+  dd if=$REC of=rootA.img.part bs=512 skip=$start count=$size status=none
+  mv rootA.img.part rootA.img
   rm $REC
 fi
+echo "$ROOTA_SHA256  rootA.img" | sha256sum -c --quiet || { echo "rootA.img: wrong checksum, delete it and rerun"; exit 1; }
 debugfs -c -R 'cat /etc/lsb-release' rootA.img 2>/dev/null | grep -E 'RELEASE_(BOARD|VERSION)='
 for l in libia_aiq libia_cmc_parser libia_coordinate libia_exc libia_log libia_mkn libia_nvm libSkyCamAICKBL; do
   debugfs -c -R "dump /usr/lib64/$l.so $TOP/blobs/lib/$l.so" rootA.img 2>/dev/null
 done
 debugfs -c -R "dump /usr/lib64/libc++.so.1.0 $TOP/blobs/lib/libc++.so.1" rootA.img 2>/dev/null
 debugfs -c -R "dump /usr/lib64/libc++abi.so.1.0 $TOP/blobs/lib/libc++abi.so.1" rootA.img 2>/dev/null
+# debugfs exits 0 even when a file is missing
+for l in libia_aiq libia_cmc_parser libia_coordinate libia_exc libia_log libia_mkn libia_nvm libSkyCamAICKBL; do
+  [ -s $TOP/blobs/lib/$l.so ] || { echo "missing in the image: $l.so"; exit 1; }
+done
+[ -s $TOP/blobs/lib/libc++.so.1 ] && [ -s $TOP/blobs/lib/libc++abi.so.1 ]
 venv/bin/python - $TOP/blobs/lib <<'EOF'
 # add the GLIBC_ABI_DT_RELR version need glibc wants with DT_RELR
 import lief, sys, os

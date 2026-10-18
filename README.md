@@ -30,8 +30,10 @@ libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
 ## Steps
 
 Building needs any x86_64 Linux with rootless podman (the Surface Go
-itself works, slowly) and 2.5 GB of downloads. The fetch needs ~10 GB of
-free disk at its peak; 5 GB of it stays in `./work` as a cache:
+itself works, slowly), plus curl, unzip, sfdisk, debugfs (e2fsprogs),
+python3 with venv, gcc and make for the fetch. Downloads are 2.5 GB; the
+fetch needs ~10 GB of free disk at its peak, and 5 GB of it stays in
+`./work` as a cache:
 
 ```bash
 ./fetch-blobs.sh
@@ -53,6 +55,8 @@ Apps reach the camera through PipeWire. In Chromium, enable
 **Undo:** `./install-ipa.sh --uninstall` goes back to libcamera's own IPA.
 For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
 `sudo dnf distro-sync 'libcamera*'`, then `systemctl --user restart wireplumber`.
+While the lock is in place, Fedora updates that need a newer libcamera are
+held back too. Build output and caches: `rm -rf work blobs out`.
 
 ## Limitations
 
@@ -61,9 +65,15 @@ For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
   Under kernel 7.2 it gave one green frame and then hung anyway. The IR
   sensor (ov7251) is not supported by libcamera.
 - **No autofocus:** the ov5693 module is fixed-focus.
-- **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`). The IPA
-  interface changes between libcamera releases, so a newer libcamera needs
-  the port redone.
+- **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the
+  updates repository: once Fedora ships a newer build, the build scripts
+  can't download it any more). Then the version in the scripts has to
+  move; for a different upstream release the IPA port has to be redone,
+  since the IPA interface changes between libcamera releases.
+- **50 Hz mains only:** flicker reduction is fixed to 50 Hz (Intel's AE in
+  the ipu3-ipa patch, and 0101 for libcamera's own IPA). Under 60 Hz
+  lights, change `ia_aiq_ae_flicker_reduction_50hz` to `_60hz` in the
+  ipu3-ipa patch and `kFlickerPeriod` from `10ms` to `8333us` in 0101.
 - **Some fine grain** on flat surfaces; noise reduction is as tuned for
   Windows.
 - `MSHW0140` is the default tuning. `MSHW0150`, the other module variant
@@ -106,7 +116,9 @@ For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
 
 ## Legal
 
-The scripts and patches are Apache-2.0 ([`LICENSE`](LICENSE)), like ipu3-ipa itself.
+The scripts and the ipu3-ipa patch are Apache-2.0 ([`LICENSE`](LICENSE)), like
+ipu3-ipa itself. The patches in [`patches/libcamera/`](patches/libcamera/)
+change libcamera files and are LGPL-2.1-or-later, like libcamera.
 The tuning files and Intel's libraries are proprietary. They are not part
 of this repository: [`fetch-blobs.sh`](fetch-blobs.sh) downloads them from Microsoft's and
 Google's public servers on your machine, for use on your own device.

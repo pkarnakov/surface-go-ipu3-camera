@@ -1,17 +1,20 @@
 #!/bin/bash
 # On the Surface Go (Fedora 43): install build-libcamera.sh's RPMs for the
 # libcamera subpackages already installed, lock them (dnf versionlock) so
-# updates don't bring the bugs back, restart WirePlumber, and check that
-# 640x360 streams instead of aborting. Asks for the sudo password.
+# updates don't bring the bugs back (this also holds back Fedora updates
+# that need a newer libcamera), restart WirePlumber, and check that 640x360
+# streams instead of aborting. libcamera-tools (cam) is installed too, for
+# that check. Asks for the sudo password.
 #   ./install-libcamera.sh
 # Undo: sudo dnf versionlock delete 'libcamera*'; sudo dnf distro-sync 'libcamera*'
 #       systemctl --user restart wireplumber
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
 R=out/libcamera-rpms
 ls $R/libcamera-0.5.2-5.2.ipu3.fc43.x86_64.rpm >/dev/null
 pkgs=()
-for n in $(rpm -qa --qf '%{NAME}\n' 'libcamera*' | sort -u); do
+for n in $({ rpm -qa --qf '%{NAME}\n' 'libcamera*'; echo libcamera-tools; } | sort -u); do
   f=$R/$n-0.5.2-5.2.ipu3.fc43.x86_64.rpm
   if [ -f $f ]; then pkgs+=("./$f"); fi
 done
@@ -23,7 +26,8 @@ sudo dnf versionlock add $(rpm -qa 'libcamera*')
 rpm -qa 'libcamera*' | sort
 systemctl --user restart wireplumber; sleep 5
 systemctl --user is-active wireplumber
-CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1)
+CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1 || true)
+[ -n "$CAM" ] || { echo "no front camera (CAMF) in cam -l"; exit 1; }
 for s in 640x360 1280x720; do
   rc=0; timeout -k 3 20 cam -c "$CAM" --capture=10 --stream width=${s%x*},height=${s#*x} >/tmp/cam.$$ 2>&1 </dev/null || rc=$?
   echo "$s: rc=$rc (134 = abort), $(grep -c 'fps)' /tmp/cam.$$) frames"

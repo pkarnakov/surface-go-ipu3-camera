@@ -6,22 +6,29 @@
 #   test/compare.sh
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
+case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
+command -v cam >/dev/null || { echo "cam not found: sudo dnf install libcamera-tools"; exit 1; }
 F=$PWD/frames
-rm -rf $F; mkdir -p $F
+rm -rf "$F"; mkdir -p "$F"
 for ipa in libcamera intel; do
-  if [ $ipa = intel ]; then export LIBCAMERA_IPA_MODULE_PATH=~/.local/lib/libcamera-ipu3-intel; fi
+  if [ $ipa = intel ]; then
+    export LIBCAMERA_IPA_MODULE_PATH=~/.local/lib/libcamera-ipu3-intel
+  else
+    unset LIBCAMERA_IPA_MODULE_PATH
+  fi
   # the number changes: with Intel's IPA the back camera is gone
-  CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1)
-  mkdir -p $F/$ipa
+  CAM=$(cam -l 2>/dev/null | grep -m1 CAMF | cut -d: -f1 || true)
+  [ -n "$CAM" ] || { echo "$ipa: no front camera (CAMF) in cam -l"; exit 1; }
+  mkdir -p "$F/$ipa"
   rc=0; timeout -k 3 30 cam -c "$CAM" --capture=90 \
     --stream width=1280,height=720,pixelformat=NV12 --file="$F/$ipa/f-#.nv12" \
-    >$F/$ipa.out 2>&1 </dev/null || rc=$?
+    >"$F/$ipa.out" 2>&1 </dev/null || rc=$?
   echo "$ipa: rc=$rc (134 = abort, 139 = crash, 124 = hang)"
-  grep -E "Using tuning|ERROR|FATAL|Assert" $F/$ipa.out | grep -v ov7251 | sed 's/\x1b\[[0-9;]*m//g' | sort | uniq -c | head -10 || true
-  grep -E "fps\)" $F/$ipa.out | tail -1 || true
-  last=$(ls $F/$ipa/*.nv12 | sort -V | tail -1); mv "$last" $F/$ipa.nv12; rm -rf $F/$ipa
+  grep -E "Using tuning|ERROR|FATAL|Assert" "$F/$ipa.out" | grep -v ov7251 | sed 's/\x1b\[[0-9;]*m//g' | sort | uniq -c | head -10 || true
+  grep -E "fps\)" "$F/$ipa.out" | tail -1 || true
+  last=$(ls "$F/$ipa"/*.nv12 | sort -V | tail -1); mv "$last" "$F/$ipa.nv12"; rm -rf "$F/$ipa"
 done
-python3 - $F <<'EOF'
+python3 - "$F" <<'EOF'
 # NV12 -> RGB at half size, side by side, as PNG (no numpy needed)
 import sys, zlib, struct
 d = sys.argv[1]; w, h = 1280, 720

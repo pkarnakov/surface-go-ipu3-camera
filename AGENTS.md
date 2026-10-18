@@ -20,19 +20,21 @@ and why; this file covers how to work on it.
 - **Scripts:** bash with `set -euo pipefail`. Each starts with a header
   saying what it does and why, where it runs (any Linux, or on the Surface
   Go), what it needs, and how to undo it. They cd to the repo and work
-  relative to it. No hostnames, personal paths or other machine-specific
+  relative to it, refuse a path with spaces, and quote paths they delete. No hostnames, personal paths or other machine-specific
   details.
 - **Patches** are `git format-patch` output against the pinned upstream
   commit ([`patches/ipu3-ipa/`](patches/ipu3-ipa/)) or plain diffs against Fedora's source
   package ([`patches/libcamera/`](patches/libcamera/), applied as `Patch100`/`Patch101` in the
   spec). Regenerate them from a real tree; don't hand-edit hunks.
-- Apache-2.0 (as ipu3-ipa). The files the ipu3-ipa patch touches are
-  Apache-2.0; keep it so.
+- Apache-2.0 (as ipu3-ipa): the files the ipu3-ipa patch touches are
+  Apache-2.0 (meson.build CC0); keep it so. `patches/libcamera/` changes
+  LGPL-2.1-or-later files and is LGPL like them.
 
 ## Testing
 
-- [`fetch-blobs.sh`](fetch-blobs.sh) runs anywhere without root. Its output is deterministic:
-  compare `sha256sum` of `blobs/` before and after a change.
+- [`fetch-blobs.sh`](fetch-blobs.sh) runs anywhere without root. Its inputs are pinned by
+  sha256 and its output is deterministic: compare `sha256sum` of `blobs/`
+  before and after a change.
 - [`build-libcamera.sh`](build-libcamera.sh) and [`build-ipa.sh`](build-ipa.sh) need rootless podman (fedora:43).
   [`build-ipa.sh`](build-ipa.sh) fails unless the offline smoke test ([`test/ipa_smoke.cpp`](test/ipa_smoke.cpp))
   gets through 60 frames and reports the pipeline name `ipu3`.

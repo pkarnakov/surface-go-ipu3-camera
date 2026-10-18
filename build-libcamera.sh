@@ -13,8 +13,10 @@
 # Any x86_64 Linux with rootless podman (a fedora:43 container; on the
 # Surface Go itself it works too, just slowly).
 #   ./build-libcamera.sh
+# Undo: rm -rf work/libcamera out/libcamera-rpms; podman rmi registry.fedoraproject.org/fedora:43
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
 TOP=$PWD
 W=$TOP/work/libcamera
 mkdir -p $W
@@ -45,6 +47,8 @@ Patch101: 0101-ipu3-agc-flicker-free-exposure-50Hz.patch" \
 - ipu3: AGC exposure times in whole 10 ms periods (50 Hz flicker)\
 ' $SPEC
 grep -nE "^(Release|Patch16|Patch10[01]):" $SPEC
+# the spec must have taken both patches and the new release
+[ "$(grep -cE '^(Patch10[01]:|Release: 5\.2\.ipu3)' $SPEC)" = 3 ]
 dnf -y -q builddep $SPEC </dev/null
 rpmbuild -bb --nocheck --define "_topdir $TOP" $SPEC 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\] |^(Compiling|Linking|\+ )'
 rm -rf /work/RPMS; cp -a $TOP/RPMS/x86_64 /work/RPMS

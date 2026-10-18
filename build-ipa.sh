@@ -10,8 +10,10 @@
 # init/configure/start and 60 frames of synthetic statistics, black and grey.
 # Needs ./blobs from fetch-blobs.sh. Any x86_64 Linux with rootless podman.
 #   ./build-ipa.sh
+# Undo: rm -rf work/ipa out/ipa; podman rmi registry.fedoraproject.org/fedora:43
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
 TOP=$PWD
 W=$TOP/work/ipa
 [ -f blobs/lib/libSkyCamAICKBL.so ] || { echo "run ./fetch-blobs.sh first"; exit 1; }
@@ -29,7 +31,8 @@ dnf -y -q install rpm-build dnf5-plugins patch meson gcc-c++ libatomic git-core 
 [ -f libcamera-0.5.2-5.fc43.src.rpm ] || dnf -q download --srpm libcamera-0.5.2-5.fc43
 rm -rf rpmbuild; mkdir rpmbuild
 rpm -i --define "_topdir /work/rpmbuild" libcamera-0.5.2-5.fc43.src.rpm
-rpmbuild -bp --nodeps --define "_topdir /work/rpmbuild" rpmbuild/SPECS/libcamera.spec >/dev/null 2>&1
+rpmbuild -bp --nodeps --define "_topdir /work/rpmbuild" rpmbuild/SPECS/libcamera.spec >prep.out 2>&1 \
+  || { tail -20 prep.out; exit 1; }
 INC=$(dirname "$(dirname "$(find /work/rpmbuild/BUILD -path '*/include/linux/intel-ipu3.h' | head -1)")")
 ls $INC/libcamera/base/log.h
 rm -rf ipu3-ipa
