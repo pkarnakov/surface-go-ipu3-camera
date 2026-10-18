@@ -16,6 +16,8 @@ resolution (see Limitations).
 
 Tested on a Surface Go 3 with Fedora 43 (KDE), kernel 7.2 (stock Fedora),
 libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
+Before/after frames, questions and reports: [linux-surface discussion
+#2308](https://github.com/linux-surface/linux-surface/discussions/2308).
 
 ## What's here
 
