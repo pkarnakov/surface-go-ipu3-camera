@@ -19,13 +19,13 @@ libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
 
 | | |
 |---|---|
-| `fetch-blobs.sh` | Downloads Microsoft's Surface Go 3 driver package and a ChromeOS recovery image, extracts the ov5693 tuning and Intel's libraries into `./blobs` (fixed up, see below). Nothing proprietary is in this repository. |
-| `build-ipa.sh` | Builds the IPA module in a fedora:43 container (podman) into `./out/ipa`, then runs an offline smoke test. |
-| `install-ipa.sh` | On the Surface Go: installs it for your user in `~/.local/lib/libcamera-ipu3-intel` and points WirePlumber at it. `--uninstall` undoes it. |
-| `build-libcamera.sh`, `install-libcamera.sh` | Fedora's libcamera 0.5.2 rebuilt with two IPU3 fixes (below), installed and version-locked. |
-| `patches/ipu3-ipa/` | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693. |
-| `patches/libcamera/` | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. |
-| `test/compare.sh` | One frame with each IPA, side by side in `frames/compare.png`. |
+| [`fetch-blobs.sh`](fetch-blobs.sh) | Downloads Microsoft's Surface Go 3 driver package and a ChromeOS recovery image, extracts the ov5693 tuning and Intel's libraries into `./blobs` (fixed up, see below). Nothing proprietary is in this repository. |
+| [`build-ipa.sh`](build-ipa.sh) | Builds the IPA module in a fedora:43 container (podman) into `./out/ipa`, then runs an offline smoke test. |
+| [`install-ipa.sh`](install-ipa.sh) | On the Surface Go: installs it for your user in `~/.local/lib/libcamera-ipu3-intel` and points WirePlumber at it. `--uninstall` undoes it. |
+| [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with two IPU3 fixes (below), installed and version-locked. |
+| [`patches/ipu3-ipa/`](patches/ipu3-ipa/) | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693. |
+| [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. |
+| [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/compare.png`. |
 
 ## Steps
 
@@ -77,14 +77,14 @@ For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
   the 16-bit scale) does not match what the sensor gives under Linux.
   Intel's ISP config then subtracts twice what libcamera does, which hits
   the weak blue channel hardest and turns the picture yellow-green.
-  `fetch-blobs.sh` sets the level to 4096, the value that came out
+  [`fetch-blobs.sh`](fetch-blobs.sh) sets the level to 4096, the value that came out
   neutral (1024 to 8192 tried), and recomputes the AIQB checksum (u32 sum
   of the file with the field zeroed).
 - **Libraries.** `libia_*` and `libSkyCamAICKBL` come from the recovery
   image of soraka (HP Chromebook x2, also IPU3), ChromeOS 16700.66.0, with
   the libc++ they were built with. They use `DT_RELR` relocations without
   the `GLIBC_ABI_DT_RELR` version need that glibc insists on.
-  `fetch-blobs.sh` adds it with LIEF.
+  [`fetch-blobs.sh`](fetch-blobs.sh) adds it with LIEF.
 - **The IPA.** `camera/ipu3-ipa` dates from 2022. The patch:
   - renames for libcamera 0.5's interface (`computeParams`, `processStats`,
     `paramsComputed`);
@@ -101,12 +101,12 @@ For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
   IPA modules in a separate process, which also contains a crash of the
   closed libraries.
 - **Selection.** `LIBCAMERA_IPA_MODULE_PATH` (set for WirePlumber by a
-  systemd drop-in) is searched before the system's IPA directory; the
+  systemd drop-in, [`wireplumber/50-ipu3-intel.conf`](wireplumber/50-ipu3-intel.conf)) is searched before the system's IPA directory; the
   first module matching the pipeline wins.
 
 ## Legal
 
-The scripts and patches are Apache-2.0 (`LICENSE`), like ipu3-ipa itself.
+The scripts and patches are Apache-2.0 ([`LICENSE`](LICENSE)), like ipu3-ipa itself.
 The tuning files and Intel's libraries are proprietary. They are not part
-of this repository: `fetch-blobs.sh` downloads them from Microsoft's and
+of this repository: [`fetch-blobs.sh`](fetch-blobs.sh) downloads them from Microsoft's and
 Google's public servers on your machine, for use on your own device.

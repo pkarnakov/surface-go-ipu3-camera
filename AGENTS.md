@@ -2,7 +2,7 @@
 
 Intel's IPU3 3A (camera/ipu3-ipa plus Intel's closed ChromeOS libraries,
 with the Surface Go 3 Windows tuning) for the Surface Go 3's front camera
-(ov5693) under libcamera 0.5.2 on Fedora 43. The README covers what it does
+(ov5693) under libcamera 0.5.2 on Fedora 43. The [README](README.md) covers what it does
 and why; this file covers how to work on it.
 
 ## Rules
@@ -10,7 +10,7 @@ and why; this file covers how to work on it.
 - **Nothing proprietary in git**, not even temporarily: no `.aiqb`/`.cpf`,
   no Intel or ChromeOS libraries, no MSI or recovery image contents, no
   dumps of them (hex, base64, tables of their values). They are fetched by
-  `fetch-blobs.sh` into the ignored `blobs/` and `work/`. Generated output
+  [`fetch-blobs.sh`](fetch-blobs.sh) into the ignored `blobs/` and `work/`. Generated output
   (`out/`, `frames/`, logs) and binaries of any kind stay out too.
 - **Versions are pinned on purpose:** libcamera `0.5.2-5.fc43`, ipu3-ipa
   `4ff2368`, ChromeOS soraka 16700.66.0, the Surface Go 3 driver MSI
@@ -23,20 +23,20 @@ and why; this file covers how to work on it.
   relative to it. No hostnames, personal paths or other machine-specific
   details.
 - **Patches** are `git format-patch` output against the pinned upstream
-  commit (`patches/ipu3-ipa/`) or plain diffs against Fedora's source
-  package (`patches/libcamera/`, applied as `Patch100`/`Patch101` in the
+  commit ([`patches/ipu3-ipa/`](patches/ipu3-ipa/)) or plain diffs against Fedora's source
+  package ([`patches/libcamera/`](patches/libcamera/), applied as `Patch100`/`Patch101` in the
   spec). Regenerate them from a real tree; don't hand-edit hunks.
 - Apache-2.0 (as ipu3-ipa). The files the ipu3-ipa patch touches are
   Apache-2.0; keep it so.
 
 ## Testing
 
-- `fetch-blobs.sh` runs anywhere without root. Its output is deterministic:
+- [`fetch-blobs.sh`](fetch-blobs.sh) runs anywhere without root. Its output is deterministic:
   compare `sha256sum` of `blobs/` before and after a change.
-- `build-libcamera.sh` and `build-ipa.sh` need rootless podman (fedora:43).
-  `build-ipa.sh` fails unless the offline smoke test (`test/ipa_smoke.cpp`)
+- [`build-libcamera.sh`](build-libcamera.sh) and [`build-ipa.sh`](build-ipa.sh) need rootless podman (fedora:43).
+  [`build-ipa.sh`](build-ipa.sh) fails unless the offline smoke test ([`test/ipa_smoke.cpp`](test/ipa_smoke.cpp))
   gets through 60 frames and reports the pipeline name `ipu3`.
-- Picture quality only shows on the device: `test/compare.sh` (stop apps
+- Picture quality only shows on the device: [`test/compare.sh`](test/compare.sh) (stop apps
   using the camera first), then look at `frames/compare.png`. Judge colour
   on neutral surfaces (walls, grey clothes): measure mean U/V there instead
   of eyeballing.
@@ -71,6 +71,6 @@ and why; this file covers how to work on it.
 - Debug logging: `LIBCAMERA_LOG_LEVELS=IPAManager:0,IPAModule:0,IPAProxy:0,IPAIPU3:0,AIQ:0`
   (AIQ:0 prints the AE/AWB/PA results per frame).
 - To inspect the ISP parameters without the device, run the module offline
-  as `test/ipa_smoke.cpp` does: feed `processStats` synthetic AWB cells
+  as [`test/ipa_smoke.cpp`](test/ipa_smoke.cpp) does: feed `processStats` synthetic AWB cells
   (Gr, R, B, Gb, sat, 3 bytes padding per 8-byte cell) and print fields of
   `ipu3_uapi_params` after `computeParams`.
