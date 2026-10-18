@@ -35,7 +35,7 @@ ls $INC/libcamera/base/log.h
 rm -rf ipu3-ipa
 git clone -q https://gitlab.freedesktop.org/camera/ipu3-ipa.git
 git -C ipu3-ipa checkout -q 4ff2368
-git -C ipu3-ipa apply ../0001-*.patch
+git -C ipu3-ipa apply /work/0001-*.patch
 cd ipu3-ipa
 # the Intel libraries to link with (and their libc++, for the linker's checks)
 export LIBRARY_PATH=/work/blobs/lib LD_LIBRARY_PATH=/work/blobs/lib
