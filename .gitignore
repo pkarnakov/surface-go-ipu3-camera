@@ -1,0 +1,5 @@
+# downloads, proprietary parts, build output: never in git
+/work/
+/blobs/
+/out/
+/frames/

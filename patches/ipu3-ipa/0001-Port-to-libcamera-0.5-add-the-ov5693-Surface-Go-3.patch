@@ -1,0 +1,317 @@
+From 241ccc7255e9dc49a51e1998cee77f23fca58430 Mon Sep 17 00:00:00 2001
+From: Petr Karnakov <pkarnakov@gmail.com>
+Date: Sun, 18 Oct 2026 21:06:19 +0200
+Subject: [PATCH] Port to libcamera 0.5, add the ov5693 (Surface Go 3)
+
+- libcamera 0.5 renamed fillParamsBuffer/processStatsBuffer/paramsBufferReady
+  to computeParams/processStats/paramsComputed, and matches IPA modules by
+  the pipeline handler's registered name ('ipu3', was PipelineHandlerIPU3).
+- ov5693 tuning entry; tuning looked up next to the module first, then in
+  /etc/camera/ipu3/; install RPATH $ORIGIN/lib for the Intel libraries.
+- AE limited to the sensor's exposure (frame at the default VBLANK) and
+  analogue gain (as ISO), 50 Hz flicker reduction.
+- Per-frame 'Not copying' messages down from Error to Debug.
+---
+ aiq/aiq.h                    |  7 ++++
+ aiq/aiq_input_parameters.cpp |  2 +-
+ aiq/aiq_input_parameters.h   |  5 +++
+ aiq/aiq_results.cpp          | 16 ++++-----
+ ipu3.cpp                     | 66 ++++++++++++++++++++++++++++++------
+ meson.build                  | 22 +++++++-----
+ 6 files changed, 89 insertions(+), 29 deletions(-)
+
+diff --git a/aiq/aiq.h b/aiq/aiq.h
+index 49eee2d..7d6261c 100644
+--- a/aiq/aiq.h
++++ b/aiq/aiq.h
+@@ -41,6 +41,13 @@ public:
+ 			  const ipu3_uapi_stats_3a *stats);
+ 	int run2a(unsigned int frame, AiqInputParameters &params, AiqResults &results);
+ 
++	/* ISO at analogue gain 1 from the tuning, 100 if it has none */
++	unsigned int baseIso() const
++	{
++		return iaCmc_ && iaCmc_->cmc_sensitivity ?
++		       iaCmc_->cmc_sensitivity->base_iso : 100;
++	}
++
+ private:
+ 	std::string decodeError(ia_err err);
+ 
+diff --git a/aiq/aiq_input_parameters.cpp b/aiq/aiq_input_parameters.cpp
+index 1639b61..2b9fabf 100644
+--- a/aiq/aiq_input_parameters.cpp
++++ b/aiq/aiq_input_parameters.cpp
+@@ -137,7 +137,7 @@ void AiqInputParameters::setAeAwbAfDefaults()
+ 	aeInputParams.operation_mode = ia_aiq_ae_operation_mode_automatic;
+ 	aeInputParams.metering_mode = ia_aiq_ae_metering_mode_evaluative;
+ 	aeInputParams.priority_mode = ia_aiq_ae_priority_mode_normal;
+-	aeInputParams.flicker_reduction_mode = ia_aiq_ae_flicker_reduction_off;
++	aeInputParams.flicker_reduction_mode = ia_aiq_ae_flicker_reduction_50hz;
+ 	aeInputParams.exposure_window = nullptr;
+ 	aeInputParams.exposure_coordinate = nullptr;
+ 	aeInputParams.ev_shift = 0;
+diff --git a/aiq/aiq_input_parameters.h b/aiq/aiq_input_parameters.h
+index 600eb40..4ff8206 100644
+--- a/aiq/aiq_input_parameters.h
++++ b/aiq/aiq_input_parameters.h
+@@ -31,6 +31,11 @@ struct AiqInputParameters {
+ 	void reset();
+ 	int configure(const IPAConfigInfo &configInfo);
+ 	void setAeAwbAfDefaults();
++	void setAeLimits(const ia_aiq_ae_manual_limits &limits)
++	{
++		aeManualLimits = limits;
++		aeInputParams.manual_limits = &aeManualLimits;
++	}
+ 	AiqInputParameters &operator=(const AiqInputParameters &other);
+ 
+ 	ia_aiq_ae_input_params aeInputParams;
+diff --git a/aiq/aiq_results.cpp b/aiq/aiq_results.cpp
+index befcf7a..c66d7b9 100644
+--- a/aiq/aiq_results.cpp
++++ b/aiq/aiq_results.cpp
+@@ -116,13 +116,13 @@ void AiqResults::setAe(const ia_aiq_ae_results *ae)
+ 	if (ae_.exposures->exposure && ae->exposures->exposure) {
+ 		*ae_.exposures->exposure = *ae->exposures->exposure;
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying AE Exposure";
++		LOG(AIQResults, Debug) << "Not copying AE Exposure";
+ 	}
+ 
+ 	if (ae_.exposures->sensor_exposure && ae->exposures->sensor_exposure) {
+ 		*ae_.exposures->sensor_exposure = *ae->exposures->sensor_exposure;
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying AE Sensor Exposure";
++		LOG(AIQResults, Debug) << "Not copying AE Sensor Exposure";
+ 	}
+ 
+ 	// Copy weight grid
+@@ -137,14 +137,14 @@ void AiqResults::setAe(const ia_aiq_ae_results *ae)
+ 
+ 		std::copy_n(ae->weight_grid->weights, gridElements, ae_.weight_grid->weights);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying AE Weight Grids";
++		LOG(AIQResults, Debug) << "Not copying AE Weight Grids";
+ 	}
+ 
+ 	// Copy the flash info structure
+ 	if (ae_.flashes && ae->flashes) {
+ 		std::copy_n(ae->flashes, NUM_FLASH_LEDS, ae_.flashes);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying AE Flashes";
++		LOG(AIQResults, Debug) << "Not copying AE Flashes";
+ 	}
+ }
+ 
+@@ -197,14 +197,14 @@ void AiqResults::setGbce(const ia_aiq_gbce_results *gbce)
+ 		std::copy_n(gbce->b_gamma_lut, gbce->gamma_lut_size, gbce_.b_gamma_lut);
+ 		std::copy_n(gbce->g_gamma_lut, gbce->gamma_lut_size, gbce_.g_gamma_lut);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying Gamma LUT channels";
++		LOG(AIQResults, Debug) << "Not copying Gamma LUT channels";
+ 	}
+ 
+ 	if (gbce->tone_map_lut_size > 0) {
+ 		gbce_.tone_map_lut_size = gbce->tone_map_lut_size;
+ 		std::copy_n(gbce->tone_map_lut, gbce->tone_map_lut_size, gbce_.tone_map_lut);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying Tone Mapping Gain LUT";
++		LOG(AIQResults, Debug) << "Not copying Tone Mapping Gain LUT";
+ 	}
+ }
+ 
+@@ -232,7 +232,7 @@ void AiqResults::setPa(const ia_aiq_pa_results *pa)
+ 			pa->preferred_acm->sector_count,
+ 			pa_.preferred_acm->advanced_color_conversion_matrices[0][0]);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying PA hue of sectors";
++		LOG(AIQResults, Debug) << "Not copying PA hue of sectors";
+ 	}
+ 
+ 	if (pa_.ir_weight && pa->ir_weight) {
+@@ -251,7 +251,7 @@ void AiqResults::setPa(const ia_aiq_pa_results *pa)
+ 			pa->ir_weight->height * pa->ir_weight->width,
+ 			pa_.ir_weight->ir_weight_grid_B);
+ 	} else {
+-		LOG(AIQResults, Error) << "Not copying IR weight";
++		LOG(AIQResults, Debug) << "Not copying IR weight";
+ 	}
+ 
+ 	pa_.black_level = pa->black_level;
+diff --git a/ipu3.cpp b/ipu3.cpp
+index f3c65c7..8027bf2 100644
+--- a/ipu3.cpp
++++ b/ipu3.cpp
+@@ -5,7 +5,10 @@
+  * ipu3.cpp - IPU3 Image Processing Algorithms
+  */
+ 
++#include <dlfcn.h>
++#include <libgen.h>
+ #include <stdint.h>
++#include <unistd.h>
+ #include <sys/mman.h>
+ 
+ #include <linux/intel-ipu3.h>
+@@ -29,6 +32,8 @@
+ 
+ namespace libcamera {
+ 
++extern "C" IPAInterface *ipaCreate();
++
+ LOG_DEFINE_CATEGORY(IPAIPU3)
+ 
+ namespace ipa::ipu3 {
+@@ -51,10 +56,10 @@ public:
+ 	void unmapBuffers(const std::vector<unsigned int> &ids) override;
+ 
+ 	void queueRequest(const uint32_t frame, const ControlList &controls) override;
+-	void fillParamsBuffer(const uint32_t frame, const uint32_t bufferId) override;
+-	void processStatsBuffer(const uint32_t frame, const int64_t frameTimestamp,
+-				const uint32_t bufferId,
+-				const ControlList &sensorControls) override;
++	void computeParams(const uint32_t frame, const uint32_t bufferId) override;
++	void processStats(const uint32_t frame, const int64_t frameTimestamp,
++			  const uint32_t bufferId,
++			  const ControlList &sensorControls) override;
+ private:
+ 	void updateControls(const IPACameraSensorInfo &sensorInfo,
+ 			    const ControlInfoMap &sensorControls,
+@@ -175,6 +180,8 @@ int IPAIPU3::init(const IPASettings &settings,
+ 		{ "ov13858", "00ov13858.aiqb" },
+ 		{ "ov5670", "01ov5670.aiqb" },
+ 		{ "imx258", "00imx258.aiqb" },
++		/* Surface Go 3 front camera, from the Windows driver's CPF */
++		{ "ov5693", "ov5693.aiqb" },
+ 	};
+ 
+ 	LOG(IPAIPU3, Info) << "Initialising IPA IPU3 for "
+@@ -186,8 +193,20 @@ int IPAIPU3::init(const IPASettings &settings,
+ 		return -EINVAL;
+ 	}
+ 
+-	std::string tuningPath = "/etc/camera/ipu3/";
+-	std::string tuningFile = tuningPath + it->second;
++	/*
++	 * Look next to this module first (a user-level install), then in the
++	 * ChromeOS location.
++	 */
++	std::string tuningFile;
++	Dl_info info;
++	if (dladdr(reinterpret_cast<void *>(&ipaCreate), &info) && info.dli_fname) {
++		std::string path(info.dli_fname);
++		std::string dir = dirname(path.data());
++		if (access((dir + "/" + it->second).c_str(), R_OK) == 0)
++			tuningFile = dir + "/" + it->second;
++	}
++	if (tuningFile.empty())
++		tuningFile = "/etc/camera/ipu3/" + it->second;
+ 
+ 	LOG(IPAIPU3, Info) << "Using tuning file: " << tuningFile;
+ 	ret = aiqb_.load(tuningFile.c_str());
+@@ -287,6 +306,31 @@ int IPAIPU3::configure(const IPAConfigInfo &configInfo,
+ 	/* Set AE/AWB defaults, this typically might not belong here */
+ 	aiqInputParams_.setAeAwbAfDefaults();
+ 
++	/*
++	 * Keep the AE within what the sensor can do: the exposure within the
++	 * frame at the sensor's default VBLANK (the IPA does not change the
++	 * frame length), the analogue gain (gain code / 16 on the ov5693, the
++	 * tuning's own conversion) up to its maximum as an ISO limit.
++	 */
++	const auto itVBlank = ctrls_.find(V4L2_CID_VBLANK);
++	if (itVBlank != ctrls_.end()) {
++		double lineUs = sensorInfo_.minLineLength / (sensorInfo_.pixelRate / 1e6);
++		int frameLines = sensorInfo_.outputSize.height +
++				 itVBlank->second.def().get<int32_t>();
++		ia_aiq_ae_manual_limits l;
++		l.manual_exposure_time_min = -1;
++		l.manual_exposure_time_max = static_cast<int>(maxExposure_ * lineUs);
++		l.manual_frame_time_us_min = static_cast<int>(frameLines * lineUs);
++		l.manual_frame_time_us_max = l.manual_frame_time_us_min;
++		l.manual_iso_min = -1;
++		l.manual_iso_max = static_cast<short>(aiq_.baseIso() * maxGain_ / 16);
++		aiqInputParams_.setAeLimits(l);
++		LOG(IPAIPU3, Info) << "AE limits: exposure " << l.manual_exposure_time_max
++				   << " us, frame " << l.manual_frame_time_us_min
++				   << " us, ISO " << l.manual_iso_max
++				   << " (base " << aiq_.baseIso() << ")";
++	}
++
+ 	/* Upate the camera controls using the new sensor settings. */
+ 	updateControls(sensorInfo_, ctrls_, ipaControls);
+ 
+@@ -325,7 +369,7 @@ void IPAIPU3::queueRequest([[maybe_unused]] unsigned int frame,
+ 	/* \todo Start processing for 'frame' based on 'controls'. */
+ }
+ 
+-void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
++void IPAIPU3::computeParams(const uint32_t frame, const uint32_t bufferId)
+ {
+ 	auto it = buffers_.find(bufferId);
+ 	if (it == buffers_.end()) {
+@@ -359,11 +403,11 @@ void IPAIPU3::fillParamsBuffer(const uint32_t frame, const uint32_t bufferId)
+ 
+ 	setControls(frame);
+ 
+-	paramsBufferReady.emit(frame);
++	paramsComputed.emit(frame);
+ }
+ 
+-void IPAIPU3::processStatsBuffer(const uint32_t frame, const int64_t frameTimestamp,
+-				 const uint32_t bufferId, const ControlList &sensorControls)
++void IPAIPU3::processStats(const uint32_t frame, const int64_t frameTimestamp,
++			   const uint32_t bufferId, const ControlList &sensorControls)
+ {
+ 	auto it = buffers_.find(bufferId);
+ 	if (it == buffers_.end()) {
+@@ -482,7 +526,7 @@ extern "C" {
+ const struct IPAModuleInfo ipaModuleInfo = {
+ 	IPA_MODULE_API_VERSION,
+ 	1,
+-	"PipelineHandlerIPU3",
++	"ipu3",
+ 	"ipu3",
+ };
+ 
+diff --git a/meson.build b/meson.build
+index 6ea2793..a716b70 100644
+--- a/meson.build
++++ b/meson.build
+@@ -19,14 +19,14 @@ libcamera_base = dependency('libcamera-base')
+ libatomic = cc.find_library('atomic', required : false)
+ 
+ ia_deps = [
+-  cc.find_library('libia_aiq'),
+-  cc.find_library('libia_exc'),
+-  cc.find_library('libia_coordinate'),
+-  cc.find_library('libia_nvm'),
+-  cc.find_library('libia_cmc_parser'),
+-  cc.find_library('libia_mkn'),
+-  cc.find_library('libia_log'),
+-  cc.find_library('libSkyCamAICKBL'),
++  cc.find_library('ia_aiq'),
++  cc.find_library('ia_exc'),
++  cc.find_library('ia_coordinate'),
++  cc.find_library('ia_nvm'),
++  cc.find_library('ia_cmc_parser'),
++  cc.find_library('ia_mkn'),
++  cc.find_library('ia_log'),
++  cc.find_library('SkyCamAICKBL'),
+ ]
+ 
+ ia_imaging_dep = declare_dependency(
+@@ -105,4 +105,8 @@ mod = shared_module(ipa_name,
+                     include_directories : ipa_includes,
+                     dependencies : ipu3_ipa_deps,
+                     install : true,
+-                    install_dir : ipa_install_dir)
++                    install_dir : ipa_install_dir,
++                    install_rpath : '$ORIGIN/lib',
++                    # DT_RPATH, not RUNPATH: it also covers the Intel
++                    # libraries' own dependencies (libia_exc, libc++)
++                    link_args : '-Wl,--disable-new-dtags')
+-- 
+2.56.0
+

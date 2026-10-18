@@ -1,0 +1,112 @@
+# Surface Go 3 front camera on Linux with Intel's IPU3 3A
+
+The Surface Go 3's cameras sit behind Intel's IPU3. libcamera supports it,
+but its own image processing (IPA) only does exposure and white balance;
+noise reduction and sharpening stay at fixed defaults, and there is no
+tuning for the sensors. The result is soft, noisy, with a colour cast
+across the frame.
+
+This repository runs **Intel's own 3A** instead: the IPU3 IPA that wraps
+Intel's ChromeOS libraries (auto exposure, auto white balance, noise
+reduction, sharpening, lens shading), driven by the **front camera's tuning
+from Microsoft's Windows driver**. The picture comes out neutral and
+noticeably sharper, at the same ~29 fps (1280x720) or ~57 fps (640x360).
+
+Tested on a Surface Go 3 with Fedora 43 (KDE), kernel 7.2 (stock Fedora),
+libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
+
+## What's here
+
+| | |
+|---|---|
+| `fetch-blobs.sh` | Downloads Microsoft's Surface Go 3 driver package and a ChromeOS recovery image, extracts the ov5693 tuning and Intel's libraries into `./blobs` (fixed up, see below). Nothing proprietary is in this repository. |
+| `build-ipa.sh` | Builds the IPA module in a fedora:43 container (podman) into `./out/ipa`, then runs an offline smoke test. |
+| `install-ipa.sh` | On the Surface Go: installs it for your user in `~/.local/lib/libcamera-ipu3-intel` and points WirePlumber at it. `--uninstall` undoes it. |
+| `build-libcamera.sh`, `install-libcamera.sh` | Fedora's libcamera 0.5.2 rebuilt with two IPU3 fixes (below), installed and version-locked. |
+| `patches/ipu3-ipa/` | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693. |
+| `patches/libcamera/` | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. |
+| `test/compare.sh` | One frame with each IPA, side by side in `frames/compare.png`. |
+
+## Steps
+
+Building needs any x86_64 Linux with rootless podman (the Surface Go
+itself works, slowly) and 2.5 GB of downloads. The fetch needs ~10 GB of
+free disk at its peak; 5 GB of it stays in `./work` as a cache:
+
+```bash
+./fetch-blobs.sh
+./build-libcamera.sh
+./build-ipa.sh
+```
+
+Then, on the Surface Go (copy the directory over if you built elsewhere):
+
+```bash
+./install-libcamera.sh   # sudo: dnf install + versionlock
+./install-ipa.sh         # user-level, restarts WirePlumber
+test/compare.sh          # optional: frames/compare.png
+```
+
+Apps reach the camera through PipeWire. In Chromium, enable
+`chrome://flags/#enable-webrtc-pipewire-camera`.
+
+**Undo:** `./install-ipa.sh --uninstall` goes back to libcamera's own IPA.
+For libcamera itself: `sudo dnf versionlock delete 'libcamera*'`, then
+`sudo dnf distro-sync 'libcamera*'`, then `systemctl --user restart wireplumber`.
+
+## Limitations
+
+- **Front camera only.** With Intel's IPA the back camera (ov8865)
+  disappears: there is no Intel tuning for it, so its IPA fails to start.
+  Under kernel 7.2 it gave one green frame and then hung anyway. The IR
+  sensor (ov7251) is not supported by libcamera.
+- **No autofocus:** the ov5693 module is fixed-focus.
+- **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`). The IPA
+  interface changes between libcamera releases, so a newer libcamera needs
+  the port redone.
+- **Some fine grain** on flat surfaces; noise reduction is as tuned for
+  Windows.
+- `MSHW0140` is the default tuning. `MSHW0150`, the other module variant
+  in the driver, looked the same; pick it with `TUNING=MSHW0150 ./install-ipa.sh`.
+
+## How it works, and what had to be fixed
+
+- **Tuning.** The Windows driver ships `OV5693_MSHW0140_SKY.cpf` and
+  `OV5693_MSHW0150_SKY.cpf`. Each is a 32-byte `CPFF` header around an
+  `AIQB`, the format Intel's library reads. Their black level (~16600 on
+  the 16-bit scale) does not match what the sensor gives under Linux.
+  Intel's ISP config then subtracts twice what libcamera does, which hits
+  the weak blue channel hardest and turns the picture yellow-green.
+  `fetch-blobs.sh` sets the level to 4096, the value that came out
+  neutral (1024 to 8192 tried), and recomputes the AIQB checksum (u32 sum
+  of the file with the field zeroed).
+- **Libraries.** `libia_*` and `libSkyCamAICKBL` come from the recovery
+  image of soraka (HP Chromebook x2, also IPU3), ChromeOS 16700.66.0, with
+  the libc++ they were built with. They use `DT_RELR` relocations without
+  the `GLIBC_ABI_DT_RELR` version need that glibc insists on.
+  `fetch-blobs.sh` adds it with LIEF.
+- **The IPA.** `camera/ipu3-ipa` dates from 2022. The patch:
+  - renames for libcamera 0.5's interface (`computeParams`, `processStats`,
+    `paramsComputed`);
+  - registers the module under the pipeline name `ipu3`; with the old
+    `PipelineHandlerIPU3`, libcamera loads the module but silently uses
+    its own;
+  - adds the ov5693 entry;
+  - looks for the tuning next to the module;
+  - keeps AE within the sensor's exposure and gain range, with 50 Hz
+    flicker reduction.
+
+  The module is linked with `DT_RPATH` `$ORIGIN/lib`, since `RUNPATH` does
+  not reach the Intel libraries' own dependencies. libcamera runs unsigned
+  IPA modules in a separate process, which also contains a crash of the
+  closed libraries.
+- **Selection.** `LIBCAMERA_IPA_MODULE_PATH` (set for WirePlumber by a
+  systemd drop-in) is searched before the system's IPA directory; the
+  first module matching the pipeline wins.
+
+## Legal
+
+The scripts and patches are Apache-2.0 (`LICENSE`), like ipu3-ipa itself.
+The tuning files and Intel's libraries are proprietary. They are not part
+of this repository: `fetch-blobs.sh` downloads them from Microsoft's and
+Google's public servers on your machine, for use on your own device.

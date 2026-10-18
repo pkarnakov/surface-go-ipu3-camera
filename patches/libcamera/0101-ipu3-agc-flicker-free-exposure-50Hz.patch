@@ -1,0 +1,44 @@
+--- a/src/ipa/ipu3/algorithms/agc.cpp
++++ b/src/ipa/ipu3/algorithms/agc.cpp
+@@ -9,6 +9,7 @@
+ 
+ #include <algorithm>
+ #include <chrono>
++#include <cmath>
+ 
+ #include <libcamera/base/log.h>
+ #include <libcamera/base/utils.h>
+@@ -54,6 +55,13 @@
+ /* \todo Honour the FrameDurationLimits control instead of hardcoding a limit */
+ static constexpr utils::Duration kMaxExposureTime = 60ms;
+ 
++/*
++ * Mains flicker: 50 Hz lighting pulses at 100 Hz. An exposure time of whole
++ * 10 ms periods collects the same light in every frame (no banding, no
++ * pumping). Local fix: IPU3 has no AeFlickerMode support.
++ */
++static constexpr utils::Duration kFlickerPeriod = 10ms;
++
+ /* Histogram constants */
+ static constexpr uint32_t knumHistogramBins = 256;
+ 
+@@ -228,6 +236,19 @@
+ 			       context.activeState.agc.exposureMode, hist,
+ 			       effectiveExposureValue);
+ 
++	/*
++	 * Round the exposure time down to whole flicker periods and make up
++	 * with analogue gain (if the gain is capped the frame is a little
++	 * darker). Shorter exposures (bright scenes) are left alone.
++	 */
++	if (newExposureTime >= kFlickerPeriod) {
++		utils::Duration flickerFree =
++			kFlickerPeriod * std::floor(newExposureTime / kFlickerPeriod);
++		aGain = std::min(aGain * (newExposureTime / flickerFree),
++				 maxAnalogueGain_);
++		newExposureTime = flickerFree;
++	}
++
+ 	LOG(IPU3Agc, Debug)
+ 		<< "Divided up exposure time, analogue gain and digital gain are "
+ 		<< newExposureTime << ", " << aGain << " and " << dGain;
