@@ -5,6 +5,12 @@ next to the front camera) as a plain V4L2 camera, `/dev/video42` "Surface
 IR", 8-bit GREY at 30 fps, with its IR emitter lit. For face login
 (Howdy) or anything else that reads V4L2.
 
+| Emitter off | Emitter on |
+|---|---|
+| <img width="360px" alt="ir-no-emitter" src="https://github.com/user-attachments/assets/1fb5bc88-f097-436f-8d7a-26255f808eda" /> | <img width="360px" alt="ir-emitter" src="https://github.com/user-attachments/assets/62c72b4b-20dc-4d0c-be2a-d1bdf9feb53a" /> |
+
+Same exposure and gain in both frames, in a dark room.
+
 Nothing else drives it on Linux: libcamera skips mono sensors, and the
 emitter hangs off the camera PMIC (TPS68470) with no LED driver in the
 kernel. [`surface-ir.py`](surface-ir.py) does both from userspace:
