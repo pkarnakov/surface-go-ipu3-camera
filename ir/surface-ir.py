@@ -6,8 +6,9 @@
 # the IPU3 10-bit format and writes the frames to the loopback device. The
 # emitter is the TPS68470 PMIC's WLED output 2 in flash mode, fired by the
 # sensor's strobe on every frame; the exposure (and then the sensor gain)
-# follows the picture's brightness. Everything it changes (PMIC and sensor
-# registers, controls, the media link) is put back on exit.
+# follows the picture's brightness. On exit the emitter goes off and the PMIC
+# and sensor registers, the controls and the media link are put back (the
+# pad formats stay set; libcamera sets its own).
 #
 # Started by surface-ir.service (Type=notify: ready after the first frame);
 # exits when nobody has had the loopback device open for --idle seconds.
@@ -15,17 +16,20 @@
 #   surface-ir.py --test FRAMES [--out FILE.pgm]   # no loopback; prints AE
 # Needs v4l-utils (media-ctl, v4l2-ctl), python3-numpy and, without --test,
 # v4l2loopback loaded with card_label="Surface IR" exclusive_caps=1.
+# Undo: it changes nothing lasting; `sudo make uninstall` removes the install.
 import argparse
 import ctypes
 import fcntl
 import glob
 import os
 import re
+import select
 import signal
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 import numpy as np
@@ -53,6 +57,11 @@ MAX_CODE = 16                       # 520 mA, the most tested
 PAD_OEN, STROBE_MASK, STROBE_SPAN = 0x3005, 0x3b81, 0x3b8c   # span: 4 bytes, BE, lines
 PAD_STROBE = 0x08
 SPAN_MARGIN = 20                    # the pulse ends with the exposure; start it earlier
+EXPOSURE_CAP = 400                  # hard limit: pulse <= 420 lines = 8.1 ms of a 33 ms frame
+LINE_US = 19.33                     # (640 + 288 hblank) / 48 MHz
+FRAME_TIMEOUT = 1.0                 # s without a frame: give up (the strobe may still fire)
+LOCK = '/run/surface-ir.lock'
+POKE = '/run/surface-ir.poke'       # touched by pam-start: counts as a reader for --idle
 
 V4L2_CID_EXPOSURE, V4L2_CID_GAIN = 0x00980911, 0x00980913
 VIDIOC_G_CTRL, VIDIOC_S_CTRL, VIDIOC_QUERYCTRL, VIDIOC_S_FMT = 0xc008561b, 0xc008561c, 0xc0445624, 0xc0d05605
@@ -197,29 +206,45 @@ class Exposure:
         self.gmin, gmax = sub.range(V4L2_CID_GAIN)    # gmin is 1x
         self.emin, self.ecap = emin, min(exp_cap, emax)
         self.gcap = min(gain_cap * self.gmin, gmax)
-        self.level, self.exp, self.gain = 200.0, None, None
+        self.level, self.exp, self.gain, self.hold = 200.0, None, None, 0
+
+    def set_span(self, old, new):
+        # Only the low two bytes change (span <= 420; the high ones are 0).
+        # Low byte first when growing, high first when shrinking: the value
+        # in between is never above the larger of old and new.
+        hi, lo = (STROBE_SPAN + 2, new >> 8), (STROBE_SPAN + 3, new & 255)
+        for r, v in ((lo, hi) if new > old else (hi, lo)):
+            self.sensor.write(r, v)
 
     def apply(self):
         e = int(max(self.emin, min(self.level, self.ecap)))
         g = int(max(self.gmin, min(self.gmin * self.level / e, self.gcap)))
         if e != self.exp:
-            span = list((e + SPAN_MARGIN).to_bytes(4, 'big'))
+            if self.exp is None:
+                self.sensor.write(STROBE_SPAN, 0, 0, 0, 0)
+            old = (self.exp or -SPAN_MARGIN) + SPAN_MARGIN
             if self.exp is None or e > self.exp:   # keep span >= exposure
-                self.sensor.write(STROBE_SPAN, *span)
+                self.set_span(old, e + SPAN_MARGIN)
                 self.sub.set(V4L2_CID_EXPOSURE, e)
             else:
                 self.sub.set(V4L2_CID_EXPOSURE, e)
-                self.sensor.write(STROBE_SPAN, *span)
+                self.set_span(old, e + SPAN_MARGIN)
         if g != self.gain:
             self.sub.set(V4L2_CID_GAIN, g)
         self.exp, self.gain = e, g
 
     def update(self, v):
+        # The frames lag the settings by ~6 (sensor plus queued buffers): after
+        # a change, wait two updates, and step only part of the way.
         p = max(float(np.percentile(v[::8, ::8], 95)), 8.0)
-        r = min(max(self.target / p, 0.5), 2.0) ** 0.7
+        if self.hold:
+            self.hold -= 1
+            return p
+        r = min(max(self.target / p, 0.5), 2.0) ** 0.5
         top = self.ecap * self.gcap / self.gmin
-        self.level = min(max(self.level * r, self.emin), top)
-        if abs(r - 1) > 0.03:
+        level = min(max(self.level * r, self.emin), top)
+        if abs(level / self.level - 1) > 0.03:
+            self.level, self.hold = level, 2
             self.apply()
         return p
 
@@ -228,7 +253,8 @@ def main():
     ap = argparse.ArgumentParser(description='Surface Go IR camera to v4l2loopback')
     ap.add_argument('--idle', type=float, default=10, help='exit after S seconds without readers (0: never)')
     ap.add_argument('--current-ma', type=float, default=520, help=f'emitter current, {MA_PER_CODE} mA steps, max 520')
-    ap.add_argument('--exposure-max', type=int, default=400, help='exposure (= pulse) cap in lines of 19.3 us')
+    ap.add_argument('--exposure-max', type=int, default=EXPOSURE_CAP,
+                    help=f'exposure (= pulse) cap in lines of {LINE_US} us, at most {EXPOSURE_CAP}')
     ap.add_argument('--gain-max', type=float, default=8, help='sensor gain cap (x)')
     ap.add_argument('--target', type=float, default=600, help='95th percentile target, of 1023')
     ap.add_argument('--test', type=int, metavar='FRAMES', help='no loopback: run FRAMES frames, print the AE')
@@ -242,6 +268,13 @@ def main():
     code = round(a.current_ma / MA_PER_CODE)
     if not 1 <= code <= MAX_CODE:
         sys.exit(f'--current-ma: {MA_PER_CODE}..{MAX_CODE * MA_PER_CODE}')
+    if not 1 <= a.exposure_max <= EXPOSURE_CAP:
+        sys.exit(f'--exposure-max: 1..{EXPOSURE_CAP}')
+    lock = open(LOCK, 'w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit('already running')
 
     d = find_devices()
     log(f'{product}: {d["sensor"]} via {d["csi"]} {d["video"]} {d["subdev"]}, PMIC i2c-{d["pbus"]}, '
@@ -262,8 +295,10 @@ def main():
                     V4L2_PIX_FMT_GREY, V4L2_FIELD_NONE, W, W * H, *[0] * 6)))
         log(f'output {lb}')
 
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda *_: sys.exit(0))
     pmic_saved = {r: pmic.read(r)[0] for r in PMIC_SAVED}
+    pmic_saved[WLEDCTL] = 0         # off, whatever a killed earlier run left
     ctrl_saved = {c: sub.get(c) for c in (V4L2_CID_EXPOSURE, V4L2_CID_GAIN)}
     sensor_saved, stream = None, None
     link = f'"{d["sensor"]}":0->"{d["csi"]}":0'
@@ -276,8 +311,9 @@ def main():
         # own session: a Ctrl-C must not stop the stream before the sensor is restored;
         # PDEATHSIG: it ends with us all the same
         libc = ctypes.CDLL(None, use_errno=True)
+        errs = tempfile.TemporaryFile()
         stream = subprocess.Popen(['v4l2-ctl', '-d', d['video'], '--stream-mmap=4', '--stream-to=-'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0,
+                                  stdout=subprocess.PIPE, stderr=errs, bufsize=0,
                                   start_new_session=True, preexec_fn=lambda: libc.prctl(1, signal.SIGTERM))
         raw = bytearray(FRAME)
         view = memoryview(raw)
@@ -285,9 +321,13 @@ def main():
         def frame():
             n = 0
             while n < FRAME:
+                if not select.select([stream.stdout], [], [], FRAME_TIMEOUT)[0]:
+                    sys.exit(f'no frame for {FRAME_TIMEOUT:g} s')
                 k = stream.stdout.readinto(view[n:])
                 if not k:
-                    sys.exit(f'v4l2-ctl stopped (exit {stream.poll()})')
+                    errs.seek(0)
+                    sys.exit(f'v4l2-ctl stopped (exit {stream.wait()}): '
+                             + errs.read()[-500:].decode(errors='replace').strip())
                 n += k
             return raw
 
@@ -320,14 +360,22 @@ def main():
                 if p is not None and n % 15 == 0:
                     log(f'frame {n:4} mean {v.mean():6.1f} p95 {p:6.1f} exposure {ae.exp:4} gain {ae.gain}')
                 continue
-            os.write(out, (v >> 2).astype(np.uint8).tobytes())
+            buf = memoryview((v >> 2).astype(np.uint8).tobytes())
+            while buf:
+                buf = buf[os.write(out, buf):]
             if not ready:
                 sd_notify('READY=1')
                 ready = True
+            if n % 10 == 0:
+                sd_notify('WATCHDOG=1')
             now = time.monotonic()
             if a.idle and now - checked >= 1:
                 checked = now
-                if readers(lb_path):
+                try:
+                    poked = time.time() - os.stat(POKE).st_mtime < a.idle
+                except OSError:
+                    poked = False
+                if poked or readers(lb_path):
                     last_reader = now
                 elif now - last_reader > a.idle:
                     log(f'no readers for {a.idle:g} s, {n} frames in {now - t0:.0f} s')
@@ -337,8 +385,10 @@ def main():
                 f.write(b'P5 %d %d 1023\n' % (W, H) + v.astype('>u2').tobytes())
             log(f'{n} frames in {time.monotonic() - t0:.1f} s; last frame in {a.out}')
     finally:
-        sd_notify('STOPPING=1')
-        for step in ([lambda: pmic.write(WLEDCTL, 0)]
+        # nothing may interrupt this: the emitter goes off first
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            signal.signal(sig, signal.SIG_IGN)
+        for step in ([lambda: pmic.write(WLEDCTL, 0), lambda: sd_notify('STOPPING=1')]
                      + [lambda r=r: pmic.write(r, pmic_saved[r]) for r in PMIC_SAVED]
                      + [lambda: pmic.write(GSTAT, 0xfe)]                     # W1C the flags
                      + ([lambda r=r, v=v: sensor.write(r, *v) for r, v in sensor_saved.items()]

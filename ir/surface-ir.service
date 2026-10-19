@@ -1,6 +1,7 @@
 # The IR camera feed (surface-ir.py) to the v4l2loopback device "Surface IR".
 # Started on demand (systemctl start, e.g. from PAM before Howdy); ready once
 # the first frame is out; exits by itself when no one reads for 10 s.
+# Undo: sudo make uninstall.
 [Unit]
 Description=Surface Go IR camera feed to v4l2loopback
 
@@ -9,5 +10,8 @@ Type=notify
 ExecStartPre=/usr/sbin/modprobe v4l2loopback
 ExecStart=/usr/bin/python3 @LIBEXEC@/surface-ir.py --idle 10
 TimeoutStartSec=15
+# a stuck loop (no frames written) is stopped like `systemctl stop`: restore first
+WatchdogSec=3
+WatchdogSignal=SIGTERM
 # SIGTERM to the script only: it restores the sensor while v4l2-ctl still streams
 KillMode=mixed

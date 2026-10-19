@@ -14,11 +14,14 @@ kernel. [`surface-ir.py`](surface-ir.py) does both from userspace:
 - turns on the emitter: the PMIC's WLED output 2 (output 1 is
   unconnected) in flash mode, triggered by the sensor's strobe, which
   is set to fire on every frame;
-- sets the exposure, which is also the emitter pulse (capped at 400 lines,
-  7.7 ms per 33 ms frame), then the sensor gain, from the brightness;
+- sets the exposure, which is also the emitter pulse (at most 420 lines,
+  8.1 ms of a 33 ms frame, a hard limit), then the sensor gain, from the
+  brightness;
 - writes the frames to a v4l2loopback device;
-- puts the PMIC and sensor registers, the controls and the media link back
-  as they were when it exits.
+- when it exits, turns the emitter off and puts the PMIC and sensor
+  registers, the controls and the media link back (the pad formats stay
+  set; libcamera sets its own). It also stops if no frame comes for 1 s,
+  and systemd's watchdog stops it if it hangs.
 
 Tested on a Surface Go 3 (`Surface_Go_3_2022`), Fedora 43, kernel 7.2. It
 refuses to run on other models (DMI); the Go 2 is probably wired the same,
@@ -51,7 +54,8 @@ sudo modprobe -r v4l2loopback       # if it was loaded without the options
 sudo systemctl start surface-ir     # then e.g.: ffplay /dev/video42
 ```
 
-The service stops itself 10 s after the last reader closes the device. The
+The service stops itself about 10 s after the last reader closed the
+device, or 10 s after starting if no one opens it. The
 options in [`99-surface-ir.conf`](99-surface-ir.conf) (after the package's
 `98-v4l2loopback.conf`, so they win) apply to every
 v4l2loopback device, so they clash with another v4l2loopback setup (OBS);
@@ -64,12 +68,14 @@ already gray). Start the feed before Howdy in the PAM service, for example
 in `/etc/pam.d/sudo`:
 
 ```
-auth optional pam_exec.so quiet /usr/local/libexec/surface-ir/pam-start
+auth optional pam_exec.so quiet seteuid /usr/local/libexec/surface-ir/pam-start
 auth sufficient pam_howdy.so
 ```
 
 `pam-start` waits for the first frame and always succeeds, so the password
-still works when the feed doesn't. It needs root to start the service:
-true for sudo, su and SDDM, not for a screen locker that checks the
-password as the user (KDE's), which also needs a polkit rule allowing
-`org.freedesktop.systemd1.manage-units` for `surface-ir.service`.
+still works when the feed doesn't. It needs root to start the service
+(`seteuid`: sudo and su run PAM with the caller's real uid). A screen
+locker that checks the password as the user (KDE's) can't get root that
+way; it would need a polkit rule allowing
+`org.freedesktop.systemd1.manage-units` for `surface-ir.service`. Not
+tested with Howdy yet.
