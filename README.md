@@ -14,7 +14,7 @@ and noticeably sharper, at the same ~29 fps (1280x720) or ~57 fps
 (640x360). The back camera gets brighter and cleaner too, but only at full
 resolution (see Limitations).
 
-One frame each, same scene under a desk lamp (click for full size):
+One frame each, same scene under low light (click for full size):
 
 | | libcamera's IPA | Intel's 3A |
 |---|---|---|
