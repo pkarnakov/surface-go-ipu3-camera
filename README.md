@@ -14,9 +14,16 @@ and noticeably sharper, at the same ~29 fps (1280x720) or ~57 fps
 (640x360). The back camera gets brighter and cleaner too, but only at full
 resolution (see Limitations).
 
+One frame each, same scene under a desk lamp (click for full size):
+
+| | libcamera's IPA | Intel's 3A |
+|---|---|---|
+| **Front** (ov5693, 1280x720) | <img width="360px" alt="front-libcamera" src="https://github.com/user-attachments/assets/53b178ec-b37d-4add-bde8-43f75e7e34d2" /> | <img width="360px" alt="front-intel" src="https://github.com/user-attachments/assets/b8b478df-91dc-4254-9a08-7d1f84f10f0d" /> |
+| **Back** (ov8865, 3200x2432) | <img width="360px" alt="back-libcamera" src="https://github.com/user-attachments/assets/6b672e3c-1224-4972-9f63-d2b348b12ba2" /> | <img width="360px" alt="back-intel" src="https://github.com/user-attachments/assets/44009123-57f7-4d77-bbc7-5fc8835608e3" /> |
+
 Tested on a Surface Go 3 with Fedora 43 (KDE), kernel 7.2 (stock Fedora),
 libcamera 0.5.2, PipeWire/WirePlumber and Chromium.
-Before/after frames, questions and reports: [linux-surface discussion
+Questions and reports: [linux-surface discussion
 #2308](https://github.com/linux-surface/linux-surface/discussions/2308).
 
 ## What's here
