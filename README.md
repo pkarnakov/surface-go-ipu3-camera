@@ -77,13 +77,13 @@ held back too. Build output and caches: `rm -rf work blobs out`.
 
 ## Limitations
 
-- **Back camera at full resolution only** (3200x2432, ~15 fps): at any
-  other size the ov8865 driver (kernel 7.2) delivers one frame and stalls,
-  whichever IPA runs, so apps asking for a smaller size hang. The IR
-  sensor (ov7251) is not supported by libcamera; [`ir/`](ir/) makes it a
-  V4L2 camera of its own.
-- **Front camera fixed-focus:** the ov5693 module has no focus motor (the
-  back camera's autofocus works).
+- **Back camera at other sizes needs kernel 7.3:** before it, the ov8865
+  driver programs the mode only on power-up, which the lens motor keeps
+  from happening, so at any size but the full 3200x2432 it delivers one
+  frame and stalls, whichever IPA runs. Fixed by 3fe797a12bfa and
+  4e1446ac169a ("Program the sensor on stream start"), not backported to
+  7.2; with them built in, 1280x720 runs at 30 fps.
+- **Back camera flickers at 1920x1080** in apps; not investigated yet.
 - **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the
   updates repository: once Fedora ships a newer build, the build scripts
   can't download it any more). Then the version in the scripts has to

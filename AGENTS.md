@@ -67,8 +67,11 @@ and why; this file covers how to work on it.
   firmware's rotation (0) can't say so. 0102 makes libcamera treat them as
   mounted mirrored on that model, so the sensors' HFLIP is set: check with
   text in view (`cam -o mirror` showed the right way round before 0102).
-- The ov8865 driver only streams at full resolution (3264x2448 asked,
-  3200x2432 out); other sizes give one frame, then stall, with either IPA.
+- Before kernel 7.3 the ov8865 driver only streams at full resolution
+  (3264x2448 asked, 3200x2432 out); other sizes give one frame, then stall,
+  with either IPA (`ipu3-cio2: payload length is ...`). The mode is written
+  only on runtime resume, and the VCM's PM link keeps the sensor powered.
+  Fixed in 7.3 by 3fe797a12bfa and 4e1446ac169a.
 - `cam -F` takes its file name only as `--file=NAME`; `-F NAME` is a usage
   error (rc 1).
 - AIQB: a makernote, header `AIQB`, u32 size at 4, checksum at 20 = u32 sum
