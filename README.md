@@ -36,6 +36,7 @@ Questions and reports: [linux-surface discussion
 | [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with four fixes (below), installed and version-locked. |
 | [`patches/ipu3-ipa/`](patches/ipu3-ipa/) | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693 and ov8865. |
 | [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: both cameras' pictures the right way round (they read out mirrored). `0103`: the ImgU gets the Bayer order after the sensor's flips (the ov5693's flip shifts it). |
+| [`ir/`](ir/) | The IR camera (ov7251) with its IR emitter lit, as a plain V4L2 camera for face login (Howdy): a small service, see [`ir/README.md`](ir/README.md). |
 | [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/front/compare.png` (`back`: the back camera). |
 | [`test/preview.sh`](test/preview.sh) | Live preview in qcam (`front`/`back`, `intel`/`libcamera`). |
 | [`test/camtest.html`](test/camtest.html) | Browser page: what apps get through PipeWire (cameras, exact sizes, fps). |
@@ -79,7 +80,8 @@ held back too. Build output and caches: `rm -rf work blobs out`.
 - **Back camera at full resolution only** (3200x2432, ~15 fps): at any
   other size the ov8865 driver (kernel 7.2) delivers one frame and stalls,
   whichever IPA runs, so apps asking for a smaller size hang. The IR
-  sensor (ov7251) is not supported by libcamera.
+  sensor (ov7251) is not supported by libcamera; [`ir/`](ir/) makes it a
+  V4L2 camera of its own.
 - **Front camera fixed-focus:** the ov5693 module has no focus motor (the
   back camera's autofocus works).
 - **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the

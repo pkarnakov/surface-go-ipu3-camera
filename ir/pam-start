@@ -1,0 +1,8 @@
+#!/bin/bash
+# For pam_exec, before a face-login module (Howdy): start the IR feed and
+# return once it delivers frames (surface-ir.service is Type=notify). Always
+# succeeds, so a missing feed only makes face login fail, not the password.
+#   auth optional pam_exec.so quiet @LIBEXEC@/pam-start
+set -uo pipefail
+timeout 15 systemctl start surface-ir.service >/dev/null 2>&1
+exit 0
