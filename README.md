@@ -38,7 +38,7 @@ Questions and reports: [linux-surface discussion
 | [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: both cameras' pictures the right way round (they read out mirrored). `0103`: the ImgU gets the Bayer order after the sensor's flips (the ov5693's flip shifts it). |
 | [`ir/`](ir/) | The IR camera (ov7251) with its IR emitter lit, as a plain V4L2 camera for face login (Howdy): a small service, see [`ir/README.md`](ir/README.md). |
 | [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/front/compare.png` (`back`: the back camera). |
-| [`test/preview.sh`](test/preview.sh) | Live preview in qcam (`front`/`back`, `intel`/`libcamera`). |
+| [`test/preview.sh`](test/preview.sh) | Live preview in qcam (`front`/`back`, `intel`/`libcamera`, optional size such as `1280x720`). |
 | [`test/camtest.html`](test/camtest.html) | Browser page: what apps get through PipeWire (cameras, exact sizes, fps). |
 
 ## Steps

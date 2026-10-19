@@ -57,7 +57,7 @@ make check
 sudo ./surface-ir.py --test 90      # 3 s without loopback: prints the exposure, writes ir-test.pgm
 sudo make install                   # sudo make uninstall
 sudo modprobe -r v4l2loopback       # if it was loaded without the options
-sudo systemctl start surface-ir     # then e.g.: ffplay /dev/video42
+./preview.sh                        # live view in qv4l2 (starts the service)
 ```
 
 The service stops itself about 10 s after the last reader closed the
