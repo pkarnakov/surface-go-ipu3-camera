@@ -71,7 +71,8 @@ and why; this file covers how to work on it.
   (3264x2448 asked, 3200x2432 out); other sizes give one frame, then stall,
   with either IPA (`ipu3-cio2: payload length is ...`). The mode is written
   only on runtime resume, and the VCM's PM link keeps the sensor powered.
-  Fixed in 7.3 by 3fe797a12bfa and 4e1446ac169a.
+  Fixed in 7.3 by [4e1446ac169a](https://git.kernel.org/torvalds/c/4e1446ac169a) (with
+  [3fe797a12bfa](https://git.kernel.org/torvalds/c/3fe797a12bfa) before it).
 - `cam -F` takes its file name only as `--file=NAME`; `-F NAME` is a usage
   error (rc 1).
 - AIQB: a makernote, header `AIQB`, u32 size at 4, checksum at 20 = u32 sum

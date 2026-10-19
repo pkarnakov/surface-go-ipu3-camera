@@ -80,9 +80,10 @@ held back too. Build output and caches: `rm -rf work blobs out`.
 - **Back camera at other sizes needs kernel 7.3:** before it, the ov8865
   driver programs the mode only on power-up, which the lens motor keeps
   from happening, so at any size but the full 3200x2432 it delivers one
-  frame and stalls, whichever IPA runs. Fixed by 3fe797a12bfa and
-  4e1446ac169a ("Program the sensor on stream start"), not backported to
-  7.2; with them built in, 1280x720 runs at 30 fps.
+  frame and stalls, whichever IPA runs. Fixed by
+  [4e1446ac169a](https://git.kernel.org/torvalds/c/4e1446ac169a) ("Program the sensor on stream start",
+  on top of [3fe797a12bfa](https://git.kernel.org/torvalds/c/3fe797a12bfa)), not backported to 7.2; with
+  them built in, 1280x720 runs at 30 fps.
 - **Back camera flickers at 1920x1080** in apps; not investigated yet.
 - **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the
   updates repository: once Fedora ships a newer build, the build scripts
