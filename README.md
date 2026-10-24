@@ -10,8 +10,7 @@ This repository runs **Intel's own 3A** instead: the IPU3 IPA that wraps
 Intel's ChromeOS libraries (auto exposure, auto white balance, noise
 reduction, sharpening, lens shading), driven by the **cameras' tuning from
 Microsoft's Windows driver**. The front camera's picture comes out neutral
-and noticeably sharper, at the same ~29 fps (1280x720) or ~57 fps
-(640x360). The back camera gets brighter and cleaner too, but only at full
+and noticeably sharper, at the same ~29 fps (1280x720). The back camera gets brighter and cleaner too, but only at full
 resolution (see Limitations).
 
 One frame each, same scene under low light (click for full size):
@@ -35,7 +34,7 @@ Questions and reports: [linux-surface discussion
 | [`install-ipa.sh`](install-ipa.sh) | On the Surface Go: installs it for your user in `~/.local/lib/libcamera-ipu3-intel` and points WirePlumber at it. `--uninstall` undoes it. |
 | [`build-libcamera.sh`](build-libcamera.sh), [`install-libcamera.sh`](install-libcamera.sh) | Fedora's libcamera 0.5.2 rebuilt with four fixes (below), installed and version-locked. |
 | [`patches/ipu3-ipa/`](patches/ipu3-ipa/) | [camera/ipu3-ipa](https://gitlab.freedesktop.org/camera/ipu3-ipa) (4ff2368) ported to libcamera 0.5, plus the ov5693 and ov8865. |
-| [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: both cameras' pictures the right way round (they read out mirrored). `0103`: the ImgU gets the Bayer order after the sensor's flips (the ov5693's flip shifts it). |
+| [`patches/libcamera/`](patches/libcamera/) | `0100`: no abort for 640x360 and similar sizes ([libcamera#366](https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366)). `0101`: 50 Hz anti-flicker for libcamera's own IPA. `0102`: both cameras' pictures the right way round (they read out mirrored); the front camera always runs its full 2592x1944 mode, its binned mode fails when flipped. `0103`: the ImgU gets the Bayer order after the sensor's flips (the ov5693's flip shifts it). |
 | [`ir/`](ir/) | The IR camera (ov7251) with its IR emitter lit, as a plain V4L2 camera for face login (Howdy): a small service, see [`ir/README.md`](ir/README.md). |
 | [`test/compare.sh`](test/compare.sh) | One frame with each IPA, side by side in `frames/front/compare.png` (`back`: the back camera). |
 | [`test/preview.sh`](test/preview.sh) | Live preview in qcam (`front`/`back`, `intel`/`libcamera`, optional size such as `1280x720`). |
@@ -85,6 +84,9 @@ held back too. Build output and caches: `rm -rf work blobs out`.
   on top of [3fe797a12bfa](https://git.kernel.org/torvalds/c/3fe797a12bfa)), not backported to 7.2; with
   them built in, 1280x720 runs at 30 fps.
 - **Back camera flickers at 1920x1080** in apps; not investigated yet.
+- **Front camera at most ~30 fps:** flipped, the ov5693's binned mode
+  (1296x972, up to ~60 fps) gives CSI-2 frame sync errors and stalls, so
+  0102 leaves only its full 2592x1944 mode (also for 640x360).
 - **Pinned to libcamera 0.5.2** (Fedora 43's `0.5.2-5.fc43`, from the
   updates repository: once Fedora ships a newer build, the build scripts
   can't download it any more). Then the version in the scripts has to

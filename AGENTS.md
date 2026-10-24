@@ -67,6 +67,9 @@ and why; this file covers how to work on it.
   firmware's rotation (0) can't say so. 0102 makes libcamera treat them as
   mounted mirrored on that model, so the sensors' HFLIP is set: check with
   text in view (`cam -o mirror` showed the right way round before 0102).
+- The ov5693's HFLIP with its binned 1296x972 mode gives CSI-2 frame sync
+  errors (`receiver port 1`, ~15 per start, 0 without HFLIP) and stalls;
+  2592x1944 is fine with it. 0102 hides the binned mode from libcamera.
 - Before kernel 7.3 the ov8865 driver only streams at full resolution
   (3264x2448 asked, 3200x2432 out); other sizes give one frame, then stall,
   with either IPA (`ipu3-cio2: payload length is ...`). The mode is written

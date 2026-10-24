@@ -1,6 +1,6 @@
 #!/bin/bash
 # Rebuild Fedora 43's libcamera (0.5.2-5.fc43) with four fixes, as
-# Release 5.6.ipu3, into ./out/libcamera-rpms:
+# Release 5.7.ipu3, into ./out/libcamera-rpms:
 # - 0100: no abort when an app (e.g. Chromium) asks for a small 16:9 size
 #   such as 640x360. calculateBDSHeight() computes iif.height - 540
 #   unsigned; it wraps for IF heights below 540, and std::clamp(lo > hi)
@@ -16,7 +16,9 @@
 #   the firmware only has a rotation to say so: on that model (DMI) the
 #   sensors count as mounted mirrored, and libcamera sets their horizontal
 #   flip. The ov5693's flip shifts its Bayer order without its driver
-#   saying so; 0102 tells libcamera.
+#   saying so; 0102 tells libcamera. With the flip, the ov5693's binned mode
+#   (1296x972, picked for 640x480 and smaller) gives CSI-2 frame sync errors
+#   and stalls, so libcamera only gets its full 2592x1944 mode.
 # - 0103: the IPU3 pipeline gave the ImgU the sensor's unflipped Bayer order,
 #   so a sensor whose flip shifts it came out magenta or blue; the ImgU now
 #   gets the order after the flips.
@@ -54,8 +56,11 @@ Patch100: 0100-ipu3-imgu-skip-IF-heights-below-the-max-crop.patch\\
 Patch101: 0101-ipu3-agc-flicker-free-exposure-50Hz.patch\\
 Patch102: 0102-sensor-surface-go-3-cameras-mirrored.patch\\
 Patch103: 0103-ipu3-imgu-input-bayer-order-after-flips.patch" \
-  -e 's/^Release: 5%{?dist}$/Release: 5.6.ipu3%{?dist}/' \
+  -e 's/^Release: 5%{?dist}$/Release: 5.7.ipu3%{?dist}/' \
   -e '/^%changelog$/a\
+* Sat Oct 24 2026 Petr Karnakov <pkarnakov@gmail.com> - 0.5.2-5.7.ipu3\
+- sensor: only the full mode for the ov5693 (frame sync errors when binned)\
+\
 * Sat Oct 24 2026 Petr Karnakov <pkarnakov@gmail.com> - 0.5.2-5.6.ipu3\
 - ipu3: bound the IF search instead (v2 of the upstream patch)\
 \
@@ -67,7 +72,7 @@ Patch103: 0103-ipu3-imgu-input-bayer-order-after-flips.patch" \
 ' $SPEC
 grep -nE "^(Release|Patch16|Patch10[0-3]):" $SPEC
 # the spec must have taken the patches and the new release
-[ "$(grep -cE '^(Patch10[0-3]:|Release: 5\.6\.ipu3)' $SPEC)" = 5 ]
+[ "$(grep -cE '^(Patch10[0-3]:|Release: 5\.7\.ipu3)' $SPEC)" = 5 ]
 dnf -y -q builddep $SPEC </dev/null
 rpmbuild -bb --nocheck --define "_topdir $TOP" $SPEC 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\] |^(Compiling|Linking|\+ )'
 rm -rf /work/RPMS; cp -a $TOP/RPMS/x86_64 /work/RPMS

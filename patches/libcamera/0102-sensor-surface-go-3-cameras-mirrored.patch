@@ -8,7 +8,7 @@
  #include <iomanip>
  #include <limits.h>
  #include <map>
-@@ -619,6 +620,25 @@
+@@ -619,6 +620,37 @@
  		mountingOrientation_ = Orientation::Rotate0;
  	}
  
@@ -17,7 +17,9 @@
 +	 * mirrored, which the firmware can't express (it has a rotation only).
 +	 * Treat them as mounted mirrored, so that the sensor's horizontal flip
 +	 * puts them right. The ov5693's flip shifts its Bayer order, which its
-+	 * driver doesn't flag (V4L2_CTRL_FLAG_MODIFY_LAYOUT).
++	 * driver doesn't flag (V4L2_CTRL_FLAG_MODIFY_LAYOUT). With the flip,
++	 * the ov5693's binned mode (1296x972) gives CSI-2 frame sync errors
++	 * and stalls, so offer only its full size; the ImgU scales from it.
 +	 */
 +	if (model_ == "ov5693" || model_ == "ov8865") {
 +		std::string vendor, product;
@@ -26,8 +28,18 @@
 +		if (vendor == "Microsoft Corporation" && product == "Surface Go 3") {
 +			LOG(CameraSensor, Info) << "Mounted mirrored (Surface Go 3)";
 +			mountingOrientation_ = mountingOrientation_ * Transform::HFlip;
-+			if (model_ == "ov5693")
++			if (model_ == "ov5693") {
 +				flipsAlterBayerOrder_ = true;
++
++				const Size full = sizes_.back();
++				for (auto &[code, ranges] : formats_)
++					ranges.erase(std::remove_if(ranges.begin(), ranges.end(),
++								    [&](const SizeRange &r) {
++									    return r.max != full;
++								    }),
++						     ranges.end());
++				sizes_ = { full };
++			}
 +		}
 +	}
 +
