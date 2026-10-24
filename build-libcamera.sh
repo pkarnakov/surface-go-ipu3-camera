@@ -1,10 +1,12 @@
 #!/bin/bash
 # Rebuild Fedora 43's libcamera (0.5.2-5.fc43) with four fixes, as
-# Release 5.5.ipu3, into ./out/libcamera-rpms:
+# Release 5.6.ipu3, into ./out/libcamera-rpms:
 # - 0100: no abort when an app (e.g. Chromium) asks for a small 16:9 size
 #   such as 640x360. calculateBDSHeight() computes iif.height - 540
 #   unsigned; it wraps for IF heights below 540, and std::clamp(lo > hi)
 #   aborts under Fedora's _GLIBCXX_ASSERTIONS, taking WirePlumber down.
+#   calculatePipeConfig() no longer tries IF sizes below 40x540 (v2 of the
+#   patch sent upstream).
 #   https://gitlab.freedesktop.org/camera/libcamera/-/work_items/366
 # - 0101: libcamera's own IPU3 exposure control has no anti-flicker, so under
 #   50 Hz lights the picture pulses. Exposure times of 10 ms and more are
@@ -52,8 +54,11 @@ Patch100: 0100-ipu3-imgu-skip-IF-heights-below-the-max-crop.patch\\
 Patch101: 0101-ipu3-agc-flicker-free-exposure-50Hz.patch\\
 Patch102: 0102-sensor-surface-go-3-cameras-mirrored.patch\\
 Patch103: 0103-ipu3-imgu-input-bayer-order-after-flips.patch" \
-  -e 's/^Release: 5%{?dist}$/Release: 5.5.ipu3%{?dist}/' \
+  -e 's/^Release: 5%{?dist}$/Release: 5.6.ipu3%{?dist}/' \
   -e '/^%changelog$/a\
+* Sat Oct 24 2026 Petr Karnakov <pkarnakov@gmail.com> - 0.5.2-5.6.ipu3\
+- ipu3: bound the IF search instead (v2 of the upstream patch)\
+\
 * Sun Oct 18 2026 Petr Karnakov <pkarnakov@gmail.com> - 0.5.2-5.5.ipu3\
 - ipu3: skip IF heights below the max crop (std::clamp abort in WirePlumber)\
 - ipu3: AGC exposure times in whole 10 ms periods (50 Hz flicker)\
@@ -62,7 +67,7 @@ Patch103: 0103-ipu3-imgu-input-bayer-order-after-flips.patch" \
 ' $SPEC
 grep -nE "^(Release|Patch16|Patch10[0-3]):" $SPEC
 # the spec must have taken the patches and the new release
-[ "$(grep -cE '^(Patch10[0-3]:|Release: 5\.5\.ipu3)' $SPEC)" = 5 ]
+[ "$(grep -cE '^(Patch10[0-3]:|Release: 5\.6\.ipu3)' $SPEC)" = 5 ]
 dnf -y -q builddep $SPEC </dev/null
 rpmbuild -bb --nocheck --define "_topdir $TOP" $SPEC 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\] |^(Compiling|Linking|\+ )'
 rm -rf /work/RPMS; cp -a $TOP/RPMS/x86_64 /work/RPMS

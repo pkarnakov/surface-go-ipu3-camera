@@ -12,10 +12,10 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 case "$PWD" in *[[:space:]]*) echo "the repository path must not contain spaces"; exit 1;; esac
 R=out/libcamera-rpms
-ls $R/libcamera-0.5.2-5.5.ipu3.fc43.x86_64.rpm >/dev/null
+ls $R/libcamera-0.5.2-5.6.ipu3.fc43.x86_64.rpm >/dev/null
 pkgs=()
 for n in $({ rpm -qa --qf '%{NAME}\n' 'libcamera*'; echo libcamera-tools; } | sort -u); do
-  f=$R/$n-0.5.2-5.5.ipu3.fc43.x86_64.rpm
+  f=$R/$n-0.5.2-5.6.ipu3.fc43.x86_64.rpm
   if [ -f $f ]; then pkgs+=("./$f"); fi
 done
 printf '%s\n' "${pkgs[@]}"

@@ -1,17 +1,33 @@
 --- a/src/libcamera/pipeline/ipu3/imgu.cpp
 +++ b/src/libcamera/pipeline/ipu3/imgu.cpp
-@@ -108,6 +108,14 @@
- void calculateBDSHeight(ImgUDevice::Pipe *pipe, const Size &iif, const Size &gdc,
- 			unsigned int bdsWidth, float bdsSF)
- {
+@@ -406,11 +406,18 @@
+ 	float bdsSF = static_cast<float>(in.width) / gdc.width;
+ 	float sf = findScaleFactor(bdsSF, bdsScalingFactors, true);
+ 
+-	/* Populate the configurations vector by scaling width and height. */
 +	/*
-+	 * iif.height - kIFMaxCropHeight would wrap below zero: no IF height
-+	 * fits. Skip this candidate (what the unsigned wrap did anyway), before
-+	 * std::clamp() gets lo > hi, which aborts with _GLIBCXX_ASSERTIONS.
++	 * Populate the configurations vector by scaling width and height.
++	 *
++	 * calculateBDSHeight() crops up to kIFMaxCropHeight lines from the IF
++	 * height, so don't go below that, or its minimum IF height wraps.
 +	 */
-+	if (iif.height < ImgUDevice::kIFMaxCropHeight)
-+		return;
-+
- 	unsigned int minIFHeight = iif.height - ImgUDevice::kIFMaxCropHeight;
- 	unsigned int minBDSHeight = gdc.height + ImgUDevice::kFilterHeight * 2;
- 	unsigned int ifHeight;
+ 	unsigned int ifWidth = utils::alignUp(in.width, ImgUDevice::kIFAlignWidth);
+ 	unsigned int ifHeight = utils::alignUp(in.height, ImgUDevice::kIFAlignHeight);
+-	unsigned int minIfWidth = in.width - ImgUDevice::kIFMaxCropWidth;
+-	unsigned int minIfHeight = in.height - ImgUDevice::kIFMaxCropHeight;
++	unsigned int minIfWidth = std::max(in.width - ImgUDevice::kIFMaxCropWidth,
++					   ImgUDevice::kIFMaxCropWidth);
++	unsigned int minIfHeight = std::max(in.height - ImgUDevice::kIFMaxCropHeight,
++					    ImgUDevice::kIFMaxCropHeight);
+ 	while (ifWidth >= minIfWidth) {
+ 		while (ifHeight >= minIfHeight) {
+ 			Size iif{ ifWidth, ifHeight };
+@@ -424,8 +431,6 @@
+ 	/* Repeat search by scaling width first. */
+ 	ifWidth = utils::alignUp(in.width, ImgUDevice::kIFAlignWidth);
+ 	ifHeight = utils::alignUp(in.height, ImgUDevice::kIFAlignHeight);
+-	minIfWidth = in.width - ImgUDevice::kIFMaxCropWidth;
+-	minIfHeight = in.height - ImgUDevice::kIFMaxCropHeight;
+ 	while (ifHeight >= minIfHeight) {
+ 		/*
+ 		 * \todo This procedure is probably broken:
